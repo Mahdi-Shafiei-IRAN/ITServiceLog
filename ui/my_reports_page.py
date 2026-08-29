@@ -95,11 +95,12 @@ class MyReportsPage(QWidget):
 
         layout.addLayout(top_bar)
 
-        # Modern Data Grid Table
+
+        # در تابع setup_ui تیتر جدول را عوض کنید:
         self.table = QTableWidget()
-        self.table.setColumnCount(7)
+        self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
-            "شناسه", "تاریخ", "ساعت", "مراجعه‌کننده", "داخلی", "سیستم", "عملیات انجام‌شده"
+            "ردیف", "کد رهگیری", "تاریخ", "ساعت", "مراجعه‌کننده", "داخلی", "سیستم", "عملیات انجام‌شده"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -207,3 +208,49 @@ class MyReportsPage(QWidget):
             if record:
                 dialog = RecordDetailDialog(record, self)
                 dialog.exec()
+
+
+
+    # تابع جدید populate_table:
+    def populate_table(self, records):
+        self.table.setRowCount(len(records))
+        for row, rec in enumerate(records):
+            tasks_preview = " | ".join([t.task.title for t in rec.tasks if t.task]) or "-"
+            
+            items = [
+                QTableWidgetItem(str(row + 1)), # ردیف از 1 شروع می‌شود (برای خود کارشناس)
+                QTableWidgetItem(f"#{rec.id}"), # کد دیتابیس (برای ارجاع به مدیر)
+                QTableWidgetItem(rec.created_at.strftime("%Y/%m/%d")),
+                QTableWidgetItem(rec.created_at.strftime("%H:%M")),
+                QTableWidgetItem(rec.requester_name_snapshot or "-"),
+                QTableWidgetItem(rec.requester_extension_snapshot or "-"),
+                QTableWidgetItem(rec.system_name_snapshot or "-"),
+                QTableWidgetItem(tasks_preview)
+            ]
+
+            for col, item in enumerate(items):
+                item.setTextAlignment(Qt.AlignCenter if col < 7 else Qt.AlignLeft | Qt.AlignVCenter)
+                self.table.setItem(row, col, item)
+
+        self.lbl_status.setText(f"نمایش {len(records)} گزارش | دابل کلیک روی ردیف برای جزئیات.")
+
+    # الگوریتم جدید سرچ هوشمند کلمه به کلمه:
+    def filter_records(self, query: str):
+        query = query.strip().lower()
+        if not query:
+            self.populate_table(self.records)
+            return
+
+        filtered = []
+        search_words = query.split() # کلمات سرچ شده را جدا می‌کند
+        
+        for rec in self.records:
+            tasks_str = " ".join([t.task.title for t in rec.tasks if t.task]).lower()
+            # ساخت یک متن یکپارچه از کل دیتای رکورد
+            searchable_text = f"{rec.id} {rec.requester_name_snapshot or ''} {rec.requester_extension_snapshot or ''} {rec.system_name_snapshot or ''} {rec.short_description or ''} {tasks_str}".lower()
+            
+            # اگر "تمام" کلمات سرچ شده در متن رکورد وجود داشت آن را نمایش بده
+            if all(word in searchable_text for word in search_words):
+                filtered.append(rec)
+                
+        self.populate_table(filtered)

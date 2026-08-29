@@ -106,15 +106,11 @@ class ServiceRecordPage(QWidget):
             QMessageBox.warning(self, "خطا", "تایپ کردن نام شخص و انتخاب حداقل یک عملیات الزامی است.")
             return
             
-        # بررسی اینکه آیا کاربر از قبل وجود دارد؟ اگر نه، در پس‌زمینه می‌سازیم
         employee = self.db.query(Employee).filter_by(full_name=name).first()
         if not employee:
-            employee = Employee(
-                full_name=name, 
-                internal_extension=self.txt_req_ext.text().strip()
-            )
+            employee = Employee(full_name=name, internal_extension=self.txt_req_ext.text().strip())
             self.db.add(employee)
-            self.db.flush() # آیدی کاربر جدید را می‌گیریم
+            self.db.flush() 
         
         record = ServiceRecord(
             technician_id=self.technician.id,
@@ -127,15 +123,15 @@ class ServiceRecordPage(QWidget):
         )
         self.db.add(record)
         
+        # کلید حل مشکل ثبت نشدن تیک‌ها این دستور است!
+        self.db.flush() 
+        
         for task_id in tasks:
             self.db.add(ServiceRecordTask(service_record_id=record.id, task_id=task_id))
             
         self.db.commit()
         QMessageBox.information(self, "موفق", "گزارش شما سریعاً ثبت شد.")
         
-        # پاک کردن فرم برای نفر بعدی
-        self.txt_req_name.clear()
-        self.txt_req_ext.clear()
-        self.txt_system.clear()
-        self.txt_notes.clear()
+        self.txt_req_name.clear(); self.txt_req_ext.clear()
+        self.txt_system.clear(); self.txt_notes.clear()
         self.load_data()
