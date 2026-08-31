@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox)
+from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
 from database.models import Employee
 
@@ -12,15 +13,23 @@ class EmployeesPage(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("مدیریت کارمندان")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
         # فرم ثبت
         form_layout = QHBoxLayout()
+        form_layout.setSpacing(8)
         self.txt_name = QLineEdit()
         self.txt_name.setPlaceholderText("نام و نام خانوادگی کارمند...")
         self.txt_ext = QLineEdit()
         self.txt_ext.setPlaceholderText("شماره داخلی...")
-        
+
         btn_add = QPushButton("ثبت کارمند جدید")
+        btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.add_employee)
         
         form_layout.addWidget(self.txt_name)

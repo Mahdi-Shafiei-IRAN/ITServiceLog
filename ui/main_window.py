@@ -1,4 +1,5 @@
-from PySide6.QtWidgets import QMainWindow, QTabWidget, QVBoxLayout, QWidget, QPushButton
+from PySide6.QtWidgets import (QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout,
+                               QWidget, QPushButton)
 from PySide6.QtCore import Qt
 from database.connection import SessionLocal
 from ui.service_record_page import ServiceRecordPage
@@ -7,6 +8,7 @@ from ui.dashboard_page import DashboardPage
 from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
+from ui.theme import set_variant, make_theme_toggle
 
 class MainWindow(QMainWindow):
     def __init__(self, current_technician):
@@ -27,17 +29,23 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.on_tab_changed)
-        self.tabs.setStyleSheet("""
-            QTabWidget::pane { border-top: 2px solid #CBD5E1; }
-            QTabBar::tab { padding: 10px 20px; font-weight: bold; }
-            QTabBar::tab:selected { background-color: #F8FAFC; border-bottom: 2px solid #2563EB; color: #2563EB; }
-        """)
 
-        # ----- دکمه خروج (گوشه تب‌ها) -----
+        # ----- گوشه تب‌ها: تغییر تم + خروج از حساب -----
+        corner = QWidget()
+        corner_layout = QHBoxLayout(corner)
+        corner_layout.setContentsMargins(6, 4, 6, 4)
+        corner_layout.setSpacing(8)
+
+        self.btn_theme = make_theme_toggle()
+        corner_layout.addWidget(self.btn_theme)
+
         btn_logout = QPushButton("خروج از حساب")
-        btn_logout.setStyleSheet("background-color: #EF4444; color: white; padding: 4px 15px; border-radius: 4px; font-weight: bold; margin: 4px;")
+        set_variant(btn_logout, "danger")
+        btn_logout.setCursor(Qt.PointingHandCursor)
         btn_logout.clicked.connect(self.logout)
-        self.tabs.setCornerWidget(btn_logout, Qt.TopLeftCorner) # گوشه چپ قرار می‌گیرد (چون راست‌چین است)
+        corner_layout.addWidget(btn_logout)
+
+        self.tabs.setCornerWidget(corner, Qt.TopLeftCorner)  # گوشه چپ (چون راست‌چین است)
         
         # --- تب‌های مشترک ---
         self.tab_new_record = ServiceRecordPage(self.db_session, self.technician)

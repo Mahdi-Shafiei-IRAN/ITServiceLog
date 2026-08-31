@@ -21,13 +21,14 @@ class RecordDetailDialog(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
 
         title = QLabel(f"گزارش شماره #{record.id}")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #1E293B;")
+        title.setObjectName("SectionTitle")
         layout.addWidget(title)
 
         # Details Box
         info_frame = QFrame()
-        info_frame.setStyleSheet("background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px;")
+        info_frame.setObjectName("Card")
         info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(12, 10, 12, 10)
         
         info_layout.addWidget(QLabel(f"<b>مراجعه‌کننده:</b> {record.requester_name_snapshot} (داخلی: {record.requester_extension_snapshot})"))
         info_layout.addWidget(QLabel(f"<b>سیستم / دارایی:</b> {record.system_name_snapshot or 'ثبت نشده'}"))
@@ -41,7 +42,6 @@ class RecordDetailDialog(QDialog):
         tasks_text.setReadOnly(True)
         task_names = [f"• {st.task.title}" for st in record.tasks if st.task]
         tasks_text.setPlainText("\n".join(task_names) if task_names else "موردی ثبت نشده است.")
-        tasks_text.setStyleSheet("background-color: white; border: 1px solid #CBD5E1; border-radius: 4px; padding: 6px;")
         layout.addWidget(tasks_text)
 
         # Short Note
@@ -50,12 +50,11 @@ class RecordDetailDialog(QDialog):
         note_text.setReadOnly(True)
         note_text.setPlainText(record.short_description or "بدون توضیح.")
         note_text.setMaximumHeight(80)
-        note_text.setStyleSheet("background-color: white; border: 1px solid #CBD5E1; border-radius: 4px; padding: 6px;")
         layout.addWidget(note_text)
 
         # Close button
         btn_close = QPushButton("بستن")
-        btn_close.setStyleSheet("background-color: #0284C7; color: white; padding: 8px; border-radius: 4px; font-weight: bold;")
+        btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
 
@@ -77,7 +76,7 @@ class MyReportsPage(QWidget):
         # Header + Live Search bar
         top_bar = QHBoxLayout()
         title = QLabel("گزارش‌های ثبت‌شده توسط من")
-        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1E293B;")
+        title.setObjectName("PageTitle")
         top_bar.addWidget(title)
 
         top_bar.addStretch()
@@ -89,7 +88,8 @@ class MyReportsPage(QWidget):
         top_bar.addWidget(self.txt_search)
 
         btn_refresh = QPushButton("بروزرسانی")
-        btn_refresh.setStyleSheet("background-color: #0F172A; color: white; padding: 6px 14px; border-radius: 4px;")
+        btn_refresh.setProperty("variant", "ghost")
+        btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self.load_records)
         top_bar.addWidget(btn_refresh)
 
@@ -108,27 +108,6 @@ class MyReportsPage(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.doubleClicked.connect(self.show_record_details)
 
-        # Table Styling
-        self.table.setStyleSheet("""
-            QTableWidget {
-                background-color: white;
-                alternate-background-color: #F8FAFC;
-                border: 1px solid #E2E8F0;
-                border-radius: 6px;
-                gridline-color: #F1F5F9;
-                selection-background-color: #E0F2FE;
-                selection-color: #0369A1;
-            }
-            QHeaderView::section {
-                background-color: #F1F5F9;
-                color: #475569;
-                font-weight: bold;
-                padding: 8px;
-                border: none;
-                border-bottom: 2px solid #CBD5E1;
-            }
-        """)
-
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -142,7 +121,7 @@ class MyReportsPage(QWidget):
 
         # Footer Status bar
         self.lbl_status = QLabel("تعداد کل گزارش‌های شما: ۰")
-        self.lbl_status.setStyleSheet("color: #64748B; font-size: 12px;")
+        self.lbl_status.setObjectName("Muted")
         layout.addWidget(self.lbl_status)
 
     def load_records(self):

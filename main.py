@@ -4,12 +4,13 @@ from PySide6.QtCore import Qt
 from database.connection import init_db
 from ui.login_window import LoginWindow
 from ui.main_window import MainWindow
+from ui.theme import theme
 
 def main():
     init_db()
     app = QApplication(sys.argv)
     app.setLayoutDirection(Qt.RightToLeft)
-    app.setStyleSheet("* { font-family: 'Tahoma', 'Segoe UI'; font-size: 13px; }")
+    theme.apply()  # اعمال تم مدرن (روشن/تیره) روی کل برنامه
 
     # یک حلقه ایجاد می‌کنیم تا کاربر بتواند خروج (Logout) کند
     while True:

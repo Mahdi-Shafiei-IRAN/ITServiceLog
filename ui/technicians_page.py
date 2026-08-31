@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, 
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QMessageBox)
+from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
 from database.models import Technician
 
@@ -12,9 +13,16 @@ class TechniciansPage(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("مدیریت کاربران IT")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
         # فرم ثبت نام کارشناس IT
         form_layout = QHBoxLayout()
+        form_layout.setSpacing(8)
         self.txt_name = QLineEdit()
         self.txt_name.setPlaceholderText("نام و نام خانوادگی کارشناس...")
         
@@ -31,6 +39,7 @@ class TechniciansPage(QWidget):
         self.cmb_role.addItems(["Technician", "Administrator"])
         
         btn_add = QPushButton("ثبت / ویرایش کارشناس")
+        btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.add_technician)
         
         form_layout.addWidget(self.txt_name)

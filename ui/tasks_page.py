@@ -13,18 +13,28 @@ class TasksPage(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(14)
+
+        title = QLabel("مدیریت خدمات و عملیات IT")
+        title.setObjectName("PageTitle")
+        layout.addWidget(title)
+
         # فرم افزودن
         form_layout = QHBoxLayout()
+        form_layout.setSpacing(8)
         self.txt_title = QLineEdit()
         self.txt_title.setPlaceholderText("عنوان خدمت یا دسته‌بندی جدید...")
-        
+
         btn_add_main = QPushButton("+ افزودن دسته اصلی")
+        btn_add_main.setCursor(Qt.PointingHandCursor)
         btn_add_main.clicked.connect(lambda: self.add_task(is_main=True))
-        
+
         btn_add_sub = QPushButton("+ افزودن زیرمجموعه به آیتم انتخاب‌شده")
+        btn_add_sub.setProperty("variant", "ghost")
+        btn_add_sub.setCursor(Qt.PointingHandCursor)
         btn_add_sub.clicked.connect(lambda: self.add_task(is_main=False))
-        
+
         form_layout.addWidget(self.txt_title)
         form_layout.addWidget(btn_add_main)
         form_layout.addWidget(btn_add_sub)

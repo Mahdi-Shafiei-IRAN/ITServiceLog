@@ -30,10 +30,13 @@ class AdminReportsPage(QWidget):
         self.cmb_tech.currentIndexChanged.connect(self.filter_data)
 
         btn_refresh = QPushButton("بروزرسانی اطلاعات")
+        btn_refresh.setProperty("variant", "ghost")
+        btn_refresh.setCursor(Qt.PointingHandCursor)
         btn_refresh.clicked.connect(self.load_data)
 
         btn_export = QPushButton("خروجی اکسل (Excel)")
-        btn_export.setStyleSheet("background-color: #10B981; color: white; padding: 6px 15px; font-weight: bold; border-radius: 4px;")
+        btn_export.setProperty("variant", "success")
+        btn_export.setCursor(Qt.PointingHandCursor)
         btn_export.clicked.connect(self.export_to_excel)
 
         top_bar.addWidget(QLabel("جستجو:"))
@@ -56,10 +59,7 @@ class AdminReportsPage(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setAlternatingRowColors(True)
-        self.table.setStyleSheet("""
-            QTableWidget { background-color: white; alternate-background-color: #F8FAFC; border-radius: 6px; }
-            QHeaderView::section { background-color: #F1F5F9; font-weight: bold; padding: 8px; }
-        """)
+        self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
         for i in range(7):
@@ -69,7 +69,7 @@ class AdminReportsPage(QWidget):
         layout.addWidget(self.table, stretch=1)
         
         self.lbl_status = QLabel("تعداد رکوردها: ۰")
-        self.lbl_status.setStyleSheet("color: #64748B; font-weight: bold;")
+        self.lbl_status.setObjectName("Muted")
         layout.addWidget(self.lbl_status)
 
     def load_data(self):

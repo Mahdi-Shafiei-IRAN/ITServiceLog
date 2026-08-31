@@ -11,6 +11,7 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from database.models import ServiceRecord, ServiceRecordTask, Task, Technician
+from ui.theme import theme
 
 
 class StatCard(QFrame):
@@ -52,6 +53,8 @@ class DashboardPage(QWidget):
         self.db = db_session
         self.setup_ui()
         self.refresh_dashboard()
+        # با تغییر تم، نمودارها دوباره با رنگ‌های جدید رسم شوند
+        theme.changed.connect(self.refresh_dashboard)
 
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -60,7 +63,7 @@ class DashboardPage(QWidget):
 
         # Header
         header = QLabel("داشبورد مدیریت و آمار مراجعات IT")
-        header.setStyleSheet("font-size: 22px; font-weight: bold; color: #1E293B;")
+        header.setObjectName("PageTitle")
         main_layout.addWidget(header)
 
         # KPI Metric Cards Grid
@@ -83,7 +86,7 @@ class DashboardPage(QWidget):
         charts_grid.setSpacing(15)
 
         # Chart 1: Services by Technician
-        self.fig_tech = Figure(figsize=(5, 3.2), facecolor="#F8FAFC")
+        self.fig_tech = Figure(figsize=(5, 3.2))
         self.canvas_tech = FigureCanvas(self.fig_tech)
         self.canvas_tech.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -91,7 +94,7 @@ class DashboardPage(QWidget):
         charts_grid.addWidget(frame_tech, 0, 0)
 
         # Chart 2: Most Common Tasks
-        self.fig_tasks = Figure(figsize=(5, 3.2), facecolor="#F8FAFC")
+        self.fig_tasks = Figure(figsize=(5, 3.2))
         self.canvas_tasks = FigureCanvas(self.fig_tasks)
         self.canvas_tasks.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -102,17 +105,11 @@ class DashboardPage(QWidget):
 
     def _create_chart_container(self, title: str, canvas: QWidget) -> QFrame:
         container = QFrame()
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border: 1px solid #E2E8F0;
-                border-radius: 8px;
-                padding: 10px;
-            }
-        """)
+        container.setObjectName("Card")
         layout = QVBoxLayout(container)
+        layout.setContentsMargins(14, 12, 14, 12)
         lbl = QLabel(title)
-        lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #334155; margin-bottom: 5px;")
+        lbl.setObjectName("SectionTitle")
         layout.addWidget(lbl)
         layout.addWidget(canvas)
         return container
@@ -146,17 +143,22 @@ class DashboardPage(QWidget):
             .all()
         )
 
+        p = theme.palette
+        surface = p["surface"]
+        text_color = p["text"]
+
         self.fig_tech.clear()
+        self.fig_tech.set_facecolor(surface)
         ax1 = self.fig_tech.add_subplot(111)
         if tech_data:
             names = [d[0] or "نامشخص" for d in tech_data]
             counts = [d[1] for d in tech_data]
-            bars = ax1.barh(names, counts, color="#0284C7", height=0.55)
-            ax1.bar_label(bars, padding=4, fontsize=9)
+            bars = ax1.barh(names, counts, color=p["primary"], height=0.55)
+            ax1.bar_label(bars, padding=4, fontsize=9, color=text_color)
             ax1.invert_yaxis()
-        ax1.set_facecolor("#F8FAFC")
+        ax1.set_facecolor(surface)
         ax1.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
-        ax1.tick_params(left=False, bottom=False, labelsize=9)
+        ax1.tick_params(left=False, bottom=False, labelsize=9, colors=text_color)
         self.fig_tech.tight_layout()
         self.canvas_tech.draw()
 
@@ -174,18 +176,20 @@ class DashboardPage(QWidget):
         )
 
         self.fig_tasks.clear()
+        self.fig_tasks.set_facecolor(surface)
         ax2 = self.fig_tasks.add_subplot(111)
+        ax2.set_facecolor(surface)
         if task_data:
             titles = [t[0] for t in task_data]
             counts = [t[1] for t in task_data]
             colors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"]
             ax2.pie(
-                counts, 
-                labels=titles, 
-                autopct='%1.0f%%', 
-                startangle=140, 
+                counts,
+                labels=titles,
+                autopct='%1.0f%%',
+                startangle=140,
                 colors=colors[:len(counts)],
-                textprops={'fontsize': 9}
+                textprops={'fontsize': 9, 'color': text_color}
             )
         self.fig_tasks.tight_layout()
         self.canvas_tasks.draw()

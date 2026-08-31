@@ -16,7 +16,8 @@ class ServiceRecordPage(QWidget):
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+        layout.setSpacing(14)
+
         # بخش مراجعه‌کننده (فقط فیلدهای متنی آزاد)
         req_group = QGroupBox("مراجعه‌کننده (نام فرد را تایپ کنید)")
         req_layout = QHBoxLayout()
@@ -55,7 +56,9 @@ class ServiceRecordPage(QWidget):
         layout.addWidget(self.txt_notes)
 
         btn_submit = QPushButton("ثبت گزارش")
-        btn_submit.setStyleSheet("background-color: #27AE60; color: white; padding: 10px; font-weight: bold;")
+        btn_submit.setProperty("variant", "success")
+        btn_submit.setMinimumHeight(42)
+        btn_submit.setCursor(Qt.PointingHandCursor)
         btn_submit.clicked.connect(self.save_record)
         layout.addWidget(btn_submit)
 
