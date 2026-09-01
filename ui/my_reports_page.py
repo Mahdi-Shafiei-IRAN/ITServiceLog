@@ -1,11 +1,13 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-    QDialog, QTextEdit, QFrame, QAbstractItemView
+    QDialog, QTextEdit, QFrame, QAbstractItemView, QMessageBox, QFileDialog
 )
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
 from database.models import ServiceRecord
+from reports.excel_exporter import export_records_to_excel
+from ui.record_edit_dialog import EditServiceRecordDialog, delete_service_record
 
 
 class RecordDetailDialog(QDialog):
@@ -65,6 +67,7 @@ class MyReportsPage(QWidget):
         self.db = db_session
         self.technician = current_technician
         self.records = []
+        self.displayed = []
         self.setup_ui()
         self.load_records()
 
@@ -83,9 +86,26 @@ class MyReportsPage(QWidget):
 
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("جستجو در مراجعین، سیستم، کار یا توضیحات...")
-        self.txt_search.setFixedWidth(320)
+        self.txt_search.setFixedWidth(300)
         self.txt_search.textChanged.connect(self.filter_records)
         top_bar.addWidget(self.txt_search)
+
+        btn_export = QPushButton("خروجی اکسل")
+        btn_export.setProperty("variant", "success")
+        btn_export.setCursor(Qt.PointingHandCursor)
+        btn_export.clicked.connect(self.export_to_excel)
+        top_bar.addWidget(btn_export)
+
+        btn_edit = QPushButton("ویرایش")
+        btn_edit.setCursor(Qt.PointingHandCursor)
+        btn_edit.clicked.connect(self.edit_selected)
+        top_bar.addWidget(btn_edit)
+
+        btn_delete = QPushButton("حذف")
+        btn_delete.setProperty("variant", "danger")
+        btn_delete.setCursor(Qt.PointingHandCursor)
+        btn_delete.clicked.connect(self.delete_selected)
+        top_bar.addWidget(btn_delete)
 
         btn_refresh = QPushButton("بروزرسانی")
         btn_refresh.setProperty("variant", "ghost")
@@ -134,50 +154,6 @@ class MyReportsPage(QWidget):
         )
         self.populate_table(self.records)
 
-    def populate_table(self, records):
-        self.table.setRowCount(len(records))
-        for row, rec in enumerate(records):
-            tasks_preview = ", ".join([t.task.title for t in rec.tasks if t.task]) or "-"
-
-            items = [
-                QTableWidgetItem(str(rec.id)),
-                QTableWidgetItem(rec.created_at.strftime("%Y/%m/%d")),
-                QTableWidgetItem(rec.created_at.strftime("%H:%M")),
-                QTableWidgetItem(rec.requester_name_snapshot or "-"),
-                QTableWidgetItem(rec.requester_extension_snapshot or "-"),
-                QTableWidgetItem(rec.system_name_snapshot or "-"),
-                QTableWidgetItem(tasks_preview)
-            ]
-
-            for col, item in enumerate(items):
-                if col < 6:
-                    item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, col, item)
-
-        self.lbl_status.setText(f"نمایش {len(records)} گزارش | برای مشاهده جزئیات کامل روی هر ردیف دابل کلیک کنید.")
-
-    def filter_records(self, query: str):
-        """Instant filtering across all columns."""
-        query = query.strip().lower()
-        if not query:
-            self.populate_table(self.records)
-            return
-
-        filtered = []
-        for rec in self.records:
-            tasks_str = " ".join([t.task.title for t in rec.tasks if t.task]).lower()
-            match = (
-                query in str(rec.id)
-                or query in (rec.requester_name_snapshot or "").lower()
-                or query in (rec.requester_extension_snapshot or "").lower()
-                or query in (rec.system_name_snapshot or "").lower()
-                or query in (rec.short_description or "").lower()
-                or query in tasks_str
-            )
-            if match:
-                filtered.append(rec)
-        self.populate_table(filtered)
-
     def show_record_details(self, index):
         row = index.row()
         record_id_item = self.table.item(row, 0)
@@ -190,12 +166,12 @@ class MyReportsPage(QWidget):
 
 
 
-    # تابع جدید populate_table:
     def populate_table(self, records):
+        self.displayed = list(records)  # لیست رکوردهای در حال نمایش (برای ویرایش/حذف)
         self.table.setRowCount(len(records))
         for row, rec in enumerate(records):
             tasks_preview = " | ".join([t.task.title for t in rec.tasks if t.task]) or "-"
-            
+
             items = [
                 QTableWidgetItem(str(row + 1)), # ردیف از 1 شروع می‌شود (برای خود کارشناس)
                 QTableWidgetItem(f"#{rec.id}"), # کد دیتابیس (برای ارجاع به مدیر)
@@ -206,6 +182,7 @@ class MyReportsPage(QWidget):
                 QTableWidgetItem(rec.system_name_snapshot or "-"),
                 QTableWidgetItem(tasks_preview)
             ]
+            items[0].setData(Qt.UserRole, rec.id)
 
             for col, item in enumerate(items):
                 item.setTextAlignment(Qt.AlignCenter if col < 7 else Qt.AlignLeft | Qt.AlignVCenter)
@@ -231,5 +208,43 @@ class MyReportsPage(QWidget):
             # اگر "تمام" کلمات سرچ شده در متن رکورد وجود داشت آن را نمایش بده
             if all(word in searchable_text for word in search_words):
                 filtered.append(rec)
-                
+
         self.populate_table(filtered)
+
+    def _selected_record(self):
+        """رکورد متناظر با ردیف انتخاب‌شده در جدول را برمی‌گرداند."""
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.displayed):
+            QMessageBox.information(self, "توجه", "لطفاً ابتدا یک گزارش را از جدول انتخاب کنید.")
+            return None
+        return self.displayed[row]
+
+    def edit_selected(self):
+        record = self._selected_record()
+        if not record:
+            return
+        dialog = EditServiceRecordDialog(self.db, record, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.load_records()
+
+    def delete_selected(self):
+        record = self._selected_record()
+        if not record:
+            return
+        if delete_service_record(self.db, record, self):
+            self.load_records()
+
+    def export_to_excel(self):
+        if not self.displayed:
+            QMessageBox.warning(self, "خطا", "گزارشی برای خروجی گرفتن وجود ندارد.")
+            return
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "ذخیره فایل اکسل", "My_Reports.xlsx", "Excel Files (*.xlsx)"
+        )
+        if not filepath:
+            return
+        try:
+            export_records_to_excel(filepath, self.displayed, technician=self.technician)
+            QMessageBox.information(self, "موفق", f"فایل اکسل ذخیره شد:\n{filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "خطا", f"خطا در ایجاد فایل اکسل:\n{str(e)}")

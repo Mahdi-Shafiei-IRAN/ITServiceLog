@@ -62,7 +62,7 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.tab_dashboard, "داشبورد مدیریت")
             self.tab_tasks = TasksPage(self.db_session)
             self.tabs.addTab(self.tab_tasks, "مدیریت خدمات")
-            self.tab_technicians = TechniciansPage(self.db_session)
+            self.tab_technicians = TechniciansPage(self.db_session, self.technician)
             self.tabs.addTab(self.tab_technicians, "مدیریت کاربران IT")
 
         layout.addWidget(self.tabs)

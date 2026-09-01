@@ -1,10 +1,12 @@
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                               QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
-                               QHeaderView, QComboBox, QFileDialog, QMessageBox, QAbstractItemView)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+                               QLineEdit, QPushButton, QTableWidget, QTableWidgetItem,
+                               QHeaderView, QComboBox, QFileDialog, QMessageBox,
+                               QAbstractItemView, QDialog)
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
 from database.models import ServiceRecord, Technician
 from reports.excel_exporter import export_records_to_excel
+from ui.record_edit_dialog import EditServiceRecordDialog, delete_service_record
 
 class AdminReportsPage(QWidget):
     def __init__(self, db_session: Session):
@@ -39,13 +41,24 @@ class AdminReportsPage(QWidget):
         btn_export.setCursor(Qt.PointingHandCursor)
         btn_export.clicked.connect(self.export_to_excel)
 
+        btn_edit = QPushButton("ویرایش")
+        btn_edit.setCursor(Qt.PointingHandCursor)
+        btn_edit.clicked.connect(self.edit_selected)
+
+        btn_delete = QPushButton("حذف")
+        btn_delete.setProperty("variant", "danger")
+        btn_delete.setCursor(Qt.PointingHandCursor)
+        btn_delete.clicked.connect(self.delete_selected)
+
         top_bar.addWidget(QLabel("جستجو:"))
         top_bar.addWidget(self.txt_search, stretch=2)
         top_bar.addWidget(QLabel("کارشناس:"))
         top_bar.addWidget(self.cmb_tech, stretch=1)
         top_bar.addWidget(btn_refresh)
+        top_bar.addWidget(btn_edit)
+        top_bar.addWidget(btn_delete)
         top_bar.addWidget(btn_export)
-        
+
         layout.addLayout(top_bar)
 
         # ---------------- جدول نمایش داده‌ها ----------------
@@ -160,6 +173,29 @@ class AdminReportsPage(QWidget):
 
         self.populate_table(self.records)
 
+    def _selected_record(self):
+        """رکورد متناظر با ردیف انتخاب‌شده را برمی‌گرداند."""
+        row = self.table.currentRow()
+        if row < 0 or row >= len(self.records):
+            QMessageBox.information(self, "توجه", "لطفاً ابتدا یک رکورد را از جدول انتخاب کنید.")
+            return None
+        return self.records[row]
+
+    def edit_selected(self):
+        record = self._selected_record()
+        if not record:
+            return
+        dialog = EditServiceRecordDialog(self.db, record, self)
+        if dialog.exec() == QDialog.Accepted:
+            self.load_data()
+
+    def delete_selected(self):
+        record = self._selected_record()
+        if not record:
+            return
+        if delete_service_record(self.db, record, self):
+            self.load_data()
+
     def export_to_excel(self):
         if not self.records:
             return QMessageBox.warning(self, "خطا", "رکوردی برای خروجی گرفتن وجود ندارد.")
@@ -173,7 +209,7 @@ class AdminReportsPage(QWidget):
             try:
                 # ارسال رکوردهای فیلتر شده به ماژول اکسل
                 selected_tech_id = self.cmb_tech.currentData()
-                selected_tech = self.db.query(Technician).get(selected_tech_id) if selected_tech_id else None
+                selected_tech = self.db.get(Technician, selected_tech_id) if selected_tech_id else None
                 
                 export_records_to_excel(filepath, self.records, technician=selected_tech)
                 QMessageBox.information(self, "موفق", f"فایل اکسل با موفقیت ذخیره شد:\n{filepath}")
