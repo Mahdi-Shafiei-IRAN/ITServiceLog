@@ -1,45 +1,105 @@
 """
-ناظرِ جلسهٔ ریموت: در پس‌زمینه، «وصل/قطع بودن» را از روی اتصالِ واقعیِ TCP
-(پورت‌های DameWare) تشخیص می‌دهد — نه عنوانِ پنجره، چون DameWare بعد از قطع،
-پنجره را با نامِ آخرین سیستم باز نگه می‌دارد. در طولِ اتصال هر چند ثانیه از
-پنجرهٔ ریموت OCR می‌گیرد و متن را جمع می‌کند؛ به‌محضِ قطعِ اتصال، سیگنالِ
-session_ended را با کلِ شواهد می‌فرستد تا صفحهٔ ثبت، توضیح و تیک‌ها را پیش‌پُر کند.
+ناظرِ جلسهٔ ریموت: «وصل/قطع» را از روی اتصالِ واقعیِ TCP (پورت‌های DameWare)
+تشخیص می‌دهد. در طولِ اتصال هر چند ثانیه از پنجرهٔ ریموت عکس می‌گیرد، چند
+«کی‌فریمِ» متمایز را نگه می‌دارد و متنشان را OCR می‌کند؛ به‌محضِ قطع، سیگنالِ
+session_ended را با متنِ شواهد و مسیرِ کی‌فریم‌ها می‌فرستد تا صفحهٔ ثبت با
+مدلِ تصویری (یا در نبودش با قواعد) پیشنهاد بسازد.
 
-روی یک نخِ جدا اجرا می‌شود تا رابطِ کاربری هرگز کند/قفل نشود. همه‌چیز در
-session_ai.log لاگ می‌شود تا عیب‌یابی ساده باشد.
+روی نخِ جدا اجرا می‌شود؛ همه‌چیز در session_ai.log لاگ می‌شود.
 """
+import os
 import time
 import threading
 from PySide6.QtCore import QThread, Signal
 
-from services.remote_detector import (detect_sessions, get_window_rect,
-                                       format_system_label, get_remote_connections,
-                                       is_offscreen_rect)
-from services import session_ocr, task_inference
+from services.remote_detector import detect_sessions, format_system_label, get_remote_connections
+from services import session_ocr, screen_capture, task_inference
 from services.debug_log import log
 
 _MAX_LINES = 500
+_MAX_FRAMES = 4
 _POLL_SECONDS = 3
 
 
+def build_suggestion(evidence, frames):
+    """
+    نتیجهٔ پیشنهاد را می‌سازد (اول مدلِ تصویری، اگر نبود قواعد). این تابع سنگین
+    است (صدازدنِ مدل) پس باید خارج از نخِ UI صدا زده شود. یک نشستِ DB جدا باز
+    می‌کند تا از نشستِ نخِ اصلی مستقل باشد.
+    """
+    from database.connection import SessionLocal
+    from database.models import Task
+    cfg = task_inference.load_config()
+    session = SessionLocal()
+    try:
+        tasks = [(t.id, t.title) for t in session.query(Task).filter_by(is_active=True).all()]
+    except Exception:
+        tasks = []
+    finally:
+        session.close()
+
+    result = None
+    if frames:
+        try:
+            result = task_inference.infer_vision(frames, tasks, cfg)
+        except Exception as e:
+            log(f"suggestion: vision error: {e!r}")
+            result = None
+    if not result:
+        try:
+            result = task_inference.infer(evidence, tasks, cfg.get("rules"))
+        except Exception as e:
+            log(f"suggestion: rules error: {e!r}")
+            result = None
+    return result
+
+
+def _safe_remove(path):
+    try:
+        if path and os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+
+class InferenceThread(QThread):
+    """اجرای دستیِ تحلیل (دکمهٔ «پیشنهاد از جلسهٔ فعلی») روی نخِ جدا."""
+    done = Signal(object, dict)  # (result یا None, info)
+
+    def __init__(self, evidence, frames, info, parent=None):
+        super().__init__(parent)
+        self._evidence = evidence
+        self._frames = frames
+        self._info = info
+
+    def run(self):
+        result = None
+        try:
+            result = build_suggestion(self._evidence, self._frames)
+        except Exception as e:
+            log(f"manual-infer error: {e!r}")
+        for p in self._frames:
+            _safe_remove(p)
+        self.done.emit(result, self._info)
+
+
 class SessionWatcher(QThread):
-    # (متنِ شواهد, اطلاعاتِ سیستم) — هنگامِ پایانِ یک جلسهٔ دارای شواهد
-    session_ended = Signal(str, dict)
+    # (نتیجهٔ پیشنهاد آماده, اطلاعاتِ سیستم) — هنگامِ پایانِ جلسه
+    suggestion_ready = Signal(dict, dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         cfg = task_inference.load_config()
-        self.enabled = bool(cfg.get("enabled", True)) and session_ocr.is_supported()
+        self.enabled = bool(cfg.get("enabled", True)) and screen_capture.is_supported()
         self.interval = max(3, int(cfg.get("interval_seconds", 8)))
         self.ports = cfg.get("dameware_ports") or None
         self._stop = False
         self._lock = threading.Lock()
-        self._active = None  # dict یا None
+        self._active = None
 
-    # --------- حلقهٔ نخِ پس‌زمینه ---------
     def run(self):
         if not self.enabled:
-            log("watcher: disabled (enabled=false یا پلتفرم پشتیبانی نمی‌شود)")
+            log("watcher: disabled")
             return
         log(f"watcher: started interval={self.interval}s ports={self.ports or 'default'}")
         while not self._stop:
@@ -48,6 +108,8 @@ class SessionWatcher(QThread):
             except Exception as e:
                 log(f"watcher: tick error: {e!r}")
             self._sleep(_POLL_SECONDS)
+        # پاک‌سازیِ کی‌فریم‌های جلسهٔ ناتمام هنگام خروج
+        self._discard_frames()
         log("watcher: stopped")
 
     def _sleep(self, seconds):
@@ -64,7 +126,6 @@ class SessionWatcher(QThread):
         except Exception:
             sessions = []
         primary = sessions[0] if sessions else None
-
         active_key = self._active["key"] if self._active else None
         log(f"tick connected={connected} conn_ips={conn_ips} "
             f"windows={[(s.get('name'), s.get('ip')) for s in sessions]} active={active_key}")
@@ -74,16 +135,14 @@ class SessionWatcher(QThread):
             ip = (primary.get("ip") if primary else None) or (conn_ips[0] if conn_ips else None)
             hwnd = primary.get("hwnd") if primary else None
             key = ip or name or "session"
-
             if not self._active or self._active["key"] != key:
                 self._finalize("switch")
                 with self._lock:
                     self._active = {"key": key, "hwnd": hwnd, "name": name, "ip": ip,
-                                    "evidence": [], "seen": set(), "last": 0.0}
+                                    "evidence": [], "seen": set(), "frames": [], "last": 0.0}
                 log(f"session: started key={key} name={name} ip={ip} hwnd={hwnd}")
             elif hwnd:
-                self._active["hwnd"] = hwnd  # پنجره تازه پیدا شد
-
+                self._active["hwnd"] = hwnd
             now = time.time()
             if now - self._active["last"] >= self.interval:
                 self._active["last"] = now
@@ -94,16 +153,28 @@ class SessionWatcher(QThread):
 
     def _capture(self):
         hwnd = self._active.get("hwnd")
-        rect = get_window_rect(hwnd) if hwnd else None
-        if is_offscreen_rect(rect):
-            log(f"capture: پنجره نامناسب برای عکس (hwnd={hwnd} rect={rect}) — "
-                f"احتمالاً مینیمایز/پنهان است")
+        path = screen_capture.capture_window(hwnd)
+        if not path:
             return
-        text = session_ocr.capture_and_ocr(rect)
-        sample = (text[:80].replace("\n", " ")) if text else ""
-        log(f"capture: rect={rect} ocr_chars={len(text)} sample={sample!r}")
+        text = session_ocr.ocr_file(path)
+        added = self._add_evidence(text)
+        # کی‌فریم را فقط وقتی نگه دار که صفحه تغییرِ معنادار کرده (متنِ جدید)
+        keep = added > 0 or not self._active["frames"]
+        if keep:
+            with self._lock:
+                self._active["frames"].append(path)
+                if len(self._active["frames"]) > _MAX_FRAMES:
+                    old = self._active["frames"].pop(0)
+                    self._safe_remove(old)
+            log(f"capture: ocr_chars={len(text)} +{added} خط، فریم نگه‌داشته شد "
+                f"(مجموع فریم={len(self._active['frames'])})")
+        else:
+            self._safe_remove(path)
+            log(f"capture: ocr_chars={len(text)} تغییری نبود، فریم دور ریخته شد")
+
+    def _add_evidence(self, text):
         if not text:
-            return
+            return 0
         added = 0
         with self._lock:
             buf = self._active["evidence"]
@@ -120,37 +191,67 @@ class SessionWatcher(QThread):
                 added += 1
                 if len(buf) > _MAX_LINES:
                     buf.pop(0)
-        log(f"capture: +{added} خطِ جدید، مجموع={len(self._active['evidence'])}")
+        return added
 
     def _finalize(self, reason=""):
         with self._lock:
             active = self._active
             self._active = None
-        if active and active["evidence"]:
+        if not active:
+            return
+        if active["evidence"] or active["frames"]:
             info = {
                 "name": active["name"],
                 "ip": active["ip"],
                 "label": format_system_label(active["name"], active["ip"]),
             }
-            log(f"session: ended ({reason}) خطوطِ شواهد={len(active['evidence'])} → ارسالِ پیشنهاد")
-            self.session_ended.emit("\n".join(active["evidence"]), info)
-        elif active:
-            log(f"session: ended ({reason}) بدونِ شواهد → پیشنهادی ارسال نشد")
+            log(f"session: ended ({reason}) خطوط={len(active['evidence'])} "
+                f"فریم={len(active['frames'])} → تحلیل")
+            # تحلیل روی همین نخِ ناظر (خارج از UI) انجام می‌شود.
+            result = build_suggestion("\n".join(active["evidence"]), active["frames"])
+            for p in active["frames"]:
+                self._safe_remove(p)
+            if result and (result.get("task_ids") or result.get("description")):
+                log(f"session: پیشنهاد آماده source={result.get('source')} "
+                    f"tasks={result.get('task_ids')}")
+                self.suggestion_ready.emit(result, info)
+            else:
+                log("session: پیشنهادی حاصل نشد")
+        else:
+            log(f"session: ended ({reason}) بدونِ شواهد")
 
-    # --------- API برای اجرای دستی از رابطِ کاربری ---------
+    @staticmethod
+    def _safe_remove(path):
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+    def _discard_frames(self):
+        with self._lock:
+            active = self._active
+        if active:
+            for p in active.get("frames", []):
+                self._safe_remove(p)
+
+    # --------- API برای اجرای دستی ---------
     def current_evidence(self):
-        """کپیِ امنِ متنِ شواهدِ جمع‌شدهٔ فعلی (برای دکمهٔ پیشنهادِ دستی)."""
         with self._lock:
             if self._active and self._active["evidence"]:
                 return "\n".join(self._active["evidence"])
         return ""
 
+    def current_frames(self):
+        with self._lock:
+            if self._active:
+                return list(self._active.get("frames", []))
+        return []
+
     def current_target(self):
-        """(hwnd, name, ip) جلسهٔ فعال یا آخرین اتصالِ TCP (برای اجرای دستی)."""
         with self._lock:
             if self._active:
                 return self._active.get("hwnd"), self._active.get("name"), self._active.get("ip")
-        # اگر ناظر هنوز جلسه‌ای نساخته، از پنجره/اتصالِ فعلی حدس بزن
         try:
             sessions = detect_sessions(resolve=False)
             primary = sessions[0] if sessions else None

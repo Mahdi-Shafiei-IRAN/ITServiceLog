@@ -50,6 +50,11 @@ DEFAULT_CONFIG = {
     "enabled": True,
     "interval_seconds": 8,
     "dameware_ports": [6129, 6130, 6132, 6133],
+    # --- مدلِ تصویریِ محلی (Ollama) ---
+    "vision_enabled": True,
+    "vision_url": "http://localhost:11434",
+    "vision_model": "moondream",
+    "vision_timeout": 120,
     "rules": DEFAULT_RULES,
 }
 
@@ -74,6 +79,14 @@ def load_config():
             if isinstance(user.get("dameware_ports"), list) and user["dameware_ports"]:
                 cfg["dameware_ports"] = [int(p) for p in user["dameware_ports"]
                                         if str(p).isdigit()] or cfg["dameware_ports"]
+            for key in ("vision_enabled",):
+                if isinstance(user.get(key), bool):
+                    cfg[key] = user[key]
+            for key in ("vision_url", "vision_model"):
+                if isinstance(user.get(key), str) and user[key].strip():
+                    cfg[key] = user[key].strip()
+            if isinstance(user.get("vision_timeout"), (int, float)):
+                cfg["vision_timeout"] = int(user["vision_timeout"])
             if isinstance(user.get("rules"), list) and user["rules"]:
                 cfg["rules"] = user["rules"]
         else:
@@ -122,4 +135,46 @@ def infer(evidence_text, tasks, rules=None):
         "task_ids": list(matched.keys()),
         "titles": titles,
         "description": "، ".join(titles),
+        "source": "rules",
+    }
+
+
+def map_titles_to_ids(model_titles, tasks):
+    """عنوان‌هایی که مدل برگردانده را به شناسهٔ تسک‌های واقعی نگاشت می‌کند."""
+    matched = {}
+    norm_tasks = [(tid, title, _norm(title)) for tid, title in tasks]
+    for mt in model_titles:
+        nmt = _norm(mt)
+        if not nmt:
+            continue
+        for tid, title, nt in norm_tasks:
+            if tid in matched:
+                continue
+            # تطبیقِ کامل یا زیررشته‌ای (مدل ممکن است کمی متفاوت بنویسد)
+            if nt == nmt or nt in nmt or nmt in nt:
+                matched[tid] = title
+    return matched
+
+
+def infer_vision(image_paths, tasks, cfg=None):
+    """
+    تشخیص با مدلِ تصویریِ محلی. اگر مدل در دسترس نبود None برمی‌گرداند تا
+    فراخواننده به infer() (قواعد) برگردد.
+    """
+    from services import vision_model
+    if cfg is None:
+        cfg = load_config()
+    if not vision_model.is_configured(cfg):
+        return None
+    result = vision_model.analyze(image_paths, [t for _, t in tasks], cfg)
+    if not result:
+        return None
+    matched = map_titles_to_ids(result.get("titles", []), tasks)
+    titles = list(matched.values())
+    description = (result.get("summary") or "").strip() or "، ".join(titles)
+    return {
+        "task_ids": list(matched.keys()),
+        "titles": titles,
+        "description": description,
+        "source": "vision",
     }

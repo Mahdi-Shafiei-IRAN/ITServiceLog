@@ -9,7 +9,7 @@ from database.models import Employee, Task, ServiceRecord, ServiceRecordTask, Sy
 from services.remote_detector import (detect_sessions, format_system_label,
                                        derive_person_name, is_remote_connected,
                                        get_window_rect, is_offscreen_rect)
-from services import task_inference, session_ocr
+from services import task_inference, session_ocr, screen_capture
 from services.debug_log import log as ai_log
 
 class ServiceRecordPage(QWidget):
@@ -18,6 +18,7 @@ class ServiceRecordPage(QWidget):
         self.db = db_session
         self.technician = current_technician
         self.watcher = None
+        self._infer_thread = None
         self.setup_ui()
         self.load_data()
         self._init_watcher()
@@ -28,16 +29,22 @@ class ServiceRecordPage(QWidget):
         try:
             from services.session_watcher import SessionWatcher
             self.watcher = SessionWatcher(self)
-            self.watcher.session_ended.connect(self._on_session_ended)
+            self.watcher.suggestion_ready.connect(self._on_suggestion)
             self.watcher.start()
         except Exception:
             self.watcher = None
 
     def stop_watcher(self):
-        """توقفِ ایمنِ نخِ ناظر (از سمتِ MainWindow هنگام بسته‌شدن صدا زده می‌شود)."""
+        """توقفِ ایمنِ نخ‌ها (از سمتِ MainWindow هنگام بسته‌شدن صدا زده می‌شود)."""
         try:
             if self.watcher is not None:
                 self.watcher.stop()
+        except Exception:
+            pass
+        try:
+            t = getattr(self, "_infer_thread", None)
+            if t is not None and t.isRunning():
+                t.wait(3000)
         except Exception:
             pass
 
@@ -210,15 +217,9 @@ class ServiceRecordPage(QWidget):
         return visible
 
     # ------------------ پیشنهادِ خودکار از جلسهٔ ریموت (OCR) ------------------
-    def _on_session_ended(self, evidence, info):
-        """با پایانِ جلسهٔ ریموت، از روی شواهدِ OCR توضیح و موارد را پیشنهاد می‌کند."""
-        try:
-            tasks = [(t.id, t.title) for t in
-                     self.db.query(Task).filter_by(is_active=True).all()]
-            result = task_inference.infer(evidence, tasks)
-        except Exception:
-            return
-        if not result["task_ids"] and not result["description"]:
+    def _on_suggestion(self, result, info):
+        """پیشنهادِ آماده (از مدلِ تصویری یا قواعد) را دریافت و روی فرم اعمال می‌کند."""
+        if not result or (not result.get("task_ids") and not result.get("description")):
             return
         self._pending_suggestion = {"result": result, "info": info}
         self._apply_suggestion()
@@ -232,13 +233,14 @@ class ServiceRecordPage(QWidget):
         label = info.get("label") or ""
         if label and not self.txt_system.text().strip():
             self.txt_system.setText(label)  # نام شخص هم از روی همین حدس زده می‌شود
-        if result["description"] and not self.txt_notes.toPlainText().strip():
+        if result.get("description") and not self.txt_notes.toPlainText().strip():
             self.txt_notes.setPlainText(result["description"])
-        self._check_task_ids(set(result["task_ids"]))
-        n = len(result["task_ids"])
+        self._check_task_ids(set(result.get("task_ids", [])))
+        n = len(result.get("task_ids", []))
+        src = "هوش تصویری" if result.get("source") == "vision" else "قواعد"
         self.ai_lbl.setText(
-            "🤖 پیشنهاد خودکار از جلسهٔ اخیر"
-            + (f" ({label})" if label else "")
+            f"🤖 پیشنهاد خودکار ({src})"
+            + (f" — {label}" if label else "")
             + f": {n} مورد تیک خورد و توضیح پیش‌نویس شد. لطفاً بررسی و «ثبت گزارش» کنید.")
         self.ai_banner.setVisible(True)
 
@@ -264,50 +266,57 @@ class ServiceRecordPage(QWidget):
             self.ai_banner.setVisible(False)
 
     def _manual_suggest(self):
-        """اجرای دستیِ دستیار: OCRِ فوری از پنجرهٔ ریموت + شواهدِ جمع‌شده → پیشنهاد."""
-        from PySide6.QtWidgets import QApplication
+        """اجرای دستیِ دستیار: یک عکسِ فوری + شواهدِ جمع‌شده → تحلیل روی نخِ جدا."""
+        if getattr(self, "_infer_thread", None) is not None and self._infer_thread.isRunning():
+            return  # یک تحلیل در حال اجراست
         ai_log("manual: کاربر «پیشنهاد از جلسهٔ فعلی» را زد")
-        evidence = ""
-        name = ip = None
-        QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            hwnd = name = ip = None
-            accumulated = ""
-            if self.watcher is not None:
-                hwnd, name, ip = self.watcher.current_target()
-                accumulated = self.watcher.current_evidence()
-            else:
-                sessions = detect_sessions(resolve=False)
-                if sessions:
-                    hwnd = sessions[0].get("hwnd")
-                    name, ip = sessions[0].get("name"), sessions[0].get("ip")
 
-            # یک عکسِ فوری از پنجرهٔ ریموتِ فعلی (اگر پنجرهٔ مناسبی پیدا شد)
-            one_shot = ""
-            rect = get_window_rect(hwnd) if hwnd else None
-            if rect and not is_offscreen_rect(rect):
-                one_shot = session_ocr.capture_and_ocr(rect)
-            evidence = (accumulated + "\n" + one_shot).strip()
-            ai_log(f"manual: hwnd={hwnd} rect={rect} accumulated_chars={len(accumulated)} "
-                   f"oneshot_chars={len(one_shot)}")
-        finally:
-            QApplication.restoreOverrideCursor()
+        hwnd = name = ip = None
+        accumulated = ""
+        if self.watcher is not None:
+            hwnd, name, ip = self.watcher.current_target()
+            accumulated = self.watcher.current_evidence()
+        else:
+            sessions = detect_sessions(resolve=False)
+            if sessions:
+                hwnd = sessions[0].get("hwnd")
+                name, ip = sessions[0].get("name"), sessions[0].get("ip")
 
-        if not evidence:
+        # عکسِ فوری از پنجرهٔ ریموت (اگر پنجرهٔ مناسبی باشد)
+        fresh = screen_capture.capture_window(hwnd) if hwnd else None
+        one_shot = session_ocr.ocr_file(fresh) if fresh else ""
+        evidence = (accumulated + "\n" + one_shot).strip()
+        frames = [fresh] if fresh else []
+        ai_log(f"manual: hwnd={hwnd} frame={'yes' if fresh else 'no'} "
+               f"accumulated_chars={len(accumulated)} oneshot_chars={len(one_shot)}")
+
+        if not evidence and not frames:
             QMessageBox.information(
                 self, "چیزی یافت نشد",
-                "متنی از صفحهٔ ریموت خوانده نشد.\n"
-                "• مطمئن شوید پنجرهٔ DameWare باز و جلوی صفحه است.\n"
+                "تصویری از صفحهٔ ریموت گرفته نشد.\n"
+                "• مطمئن شوید پنجرهٔ DameWare باز و مینیمایز نیست.\n"
                 f"• جزئیات در فایل لاگ:\n{self._ai_log_path()}")
             return
 
+        # تحلیل (که ممکن است مدل را صدا بزند) روی نخِ جدا تا UI قفل نشود
         info = {"name": name, "ip": ip, "label": format_system_label(name, ip)}
-        self._on_session_ended(evidence, info)
-        if not self._pending_suggestion:
+        self.btn_suggest.setEnabled(False)
+        self.btn_suggest.setText("در حال تحلیل… ⏳")
+        from services.session_watcher import InferenceThread
+        self._infer_thread = InferenceThread(evidence, frames, info, self)
+        self._infer_thread.done.connect(self._on_manual_done)
+        self._infer_thread.start()
+
+    def _on_manual_done(self, result, info):
+        self.btn_suggest.setEnabled(True)
+        self.btn_suggest.setText("پیشنهاد از جلسهٔ فعلی 🤖")
+        if result and (result.get("task_ids") or result.get("description")):
+            self._on_suggestion(result, info)
+        else:
             QMessageBox.information(
                 self, "موردی تشخیص داده نشد",
-                "متن خوانده شد ولی با هیچ موردی تطبیق نداشت.\n"
-                "می‌توانید قوانینِ کلیدواژه را در فایلِ تنظیمات کامل‌تر کنید.\n"
+                "تصویر تحلیل شد ولی موردی تشخیص داده نشد.\n"
+                "اگر مدلِ تصویری نصب نیست، Ollama را راه‌اندازی کنید یا قوانینِ کلیدواژه را کامل‌تر کنید.\n"
                 f"لاگ:\n{self._ai_log_path()}")
 
     @staticmethod
