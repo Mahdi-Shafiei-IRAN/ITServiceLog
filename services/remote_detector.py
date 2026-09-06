@@ -13,6 +13,14 @@ import os
 import re
 import json
 import socket
+import subprocess
+import sys
+
+# پورت‌های پیش‌فرضِ DameWare Mini Remote Control (کلاینت به این پورت‌ها روی
+# دستگاه مقصد وصل می‌شود). «وصل بودن» را از روی اتصالِ واقعیِ TCP می‌سنجیم،
+# نه عنوانِ پنجره — چون DameWare پس از قطع، پنجره را با نامِ آخرین سیستم باز
+# نگه می‌دارد و تشخیصِ مبتنی بر عنوان را گمراه می‌کند.
+DEFAULT_DAMEWARE_PORTS = [6129, 6130, 6132, 6133]
 
 # --- تنظیمات پیش‌فرض ---
 # نام فایل اجراییِ نرم‌افزار ریموت. DWRCC.exe همان کلاینت Mini Remote Control است
@@ -121,7 +129,7 @@ def list_windows():
             if user32.IsWindowVisible(hwnd):
                 t = _text(hwnd)
                 if t:
-                    windows.append({"title": t, "process": _proc_name(hwnd)})
+                    windows.append({"title": t, "process": _proc_name(hwnd), "hwnd": int(hwnd)})
             return True
 
         user32.EnumWindows(EnumProc(_cb), 0)
@@ -134,6 +142,40 @@ def list_windows():
 def list_window_titles():
     """فقط عنوان‌ها (برای سازگاری و ابزار عیب‌یابی)."""
     return [w["title"] for w in list_windows()]
+
+
+def get_window_rect(hwnd):
+    """
+    مختصات پنجره را به شکل (left, top, width, height) برمی‌گرداند.
+    در صورت نامعتبر بودن یا خطا None برمی‌گرداند (فقط ویندوز).
+    """
+    if not hwnd:
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(wintypes.HWND(hwnd), ctypes.byref(rect)):
+            return None
+        w = rect.right - rect.left
+        h = rect.bottom - rect.top
+        if w <= 0 or h <= 0:
+            return None
+        return (rect.left, rect.top, w, h)
+    except Exception:
+        return None
+
+
+def is_offscreen_rect(rect):
+    """
+    آیا مستطیل برای عکس‌گرفتن نامناسب است؟ (پنجرهٔ مینیمایز در ویندوز روی
+    مختصاتِ ~ -32000 می‌رود؛ پنجرهٔ خیلی کوچک هم عملاً بی‌فایده است.)
+    """
+    if not rect:
+        return True
+    left, top, w, h = rect
+    return left <= -30000 or top <= -30000 or w < 40 or h < 20
 
 
 def parse_host_from_title(title, stopwords):
@@ -218,8 +260,45 @@ def detect_sessions(resolve=True):
         if key in seen:
             continue
         seen.add(key)
-        sessions.append({"title": title, "name": name, "ip": ip, "process": w.get("process")})
+        sessions.append({"title": title, "name": name, "ip": ip,
+                         "process": w.get("process"), "hwnd": w.get("hwnd")})
     return sessions
+
+
+def get_remote_connections(ports=None):
+    """
+    IPهای مقصدِ اتصال‌های فعالِ TCP (ESTABLISHED) روی پورت‌های DameWare را
+    از خروجیِ netstat می‌خواند. اگر لیست خالی بود، یعنی به کسی وصل نیستیم.
+    فقط ویندوز؛ در هر خطا لیستِ خالی برمی‌گرداند.
+    """
+    if ports is None:
+        ports = DEFAULT_DAMEWARE_PORTS
+    port_set = {int(p) for p in ports}
+    ips = []
+    if not sys.platform.startswith("win"):
+        return ips
+    try:
+        creationflags = 0x08000000 if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+        out = subprocess.run(
+            ["netstat", "-n", "-p", "TCP"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=6, creationflags=creationflags).stdout or ""
+        for line in out.splitlines():
+            parts = line.split()
+            # ستون‌ها: Proto  LocalAddress  ForeignAddress  State
+            if len(parts) >= 4 and parts[0].upper() == "TCP" and parts[3].upper() == "ESTABLISHED":
+                foreign = parts[2]
+                ip, sep, port = foreign.rpartition(":")
+                if sep and port.isdigit() and int(port) in port_set:
+                    ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
+
+def is_remote_connected(ports=None):
+    """آیا هم‌اکنون یک اتصالِ فعالِ DameWare برقرار است؟"""
+    return bool(get_remote_connections(ports))
 
 
 def format_system_label(name, ip):
@@ -227,3 +306,34 @@ def format_system_label(name, ip):
     if name and ip:
         return f"{name} ({ip})"
     return name or ip or ""
+
+
+# پیشوندهای رایجِ نام سیستم که بخشی از نام شخص نیستند و باید حذف شوند.
+_NAME_PREFIXES = {
+    "it", "pc", "sys", "system", "desktop", "laptop", "ws", "pcs",
+    "comp", "computer", "srv", "server", "user", "client", "win", "node",
+}
+
+
+def derive_person_name(system_text):
+    """
+    نام تقریبیِ شخص را از روی نام سیستم حدس می‌زند.
+    قرارداد رایج «it-<نام>» است؛ مثلاً it-sadeghi → Sadeghi.
+    اگر چیزی برای استخراج نبود (مثلاً فقط IP)، رشتهٔ خالی برمی‌گرداند.
+    """
+    if not system_text:
+        return ""
+    # حذف بخش «(IP)» و هر IP موجود در متن
+    s = system_text.split("(")[0]
+    s = _IPV4_RE.sub("", s).strip()
+    if not s:
+        return ""
+    # شکستن روی جداکننده‌های رایجِ نام سیستم
+    parts = [p for p in re.split(r"[-_./\\\s]+", s) if p]
+    # حذف توکن‌های پیشوندی و توکن‌های صرفاً عددی
+    meaningful = [p for p in parts if p.lower() not in _NAME_PREFIXES and not p.isdigit()]
+    if not meaningful:
+        return ""
+    # حذف اعداد انتهایی هر توکن (مثلاً sadeghi01 → sadeghi)
+    cleaned = [re.sub(r"\d+$", "", p) or p for p in meaningful]
+    return " ".join(cleaned).title()

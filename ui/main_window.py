@@ -71,6 +71,15 @@ class MainWindow(QMainWindow):
         self.wants_logout = True
         self.close() # پنجره را می‌بندد تا فایل main.py لاگین را دوباره باز کند
 
+    def closeEvent(self, event):
+        # نخِ ناظرِ جلسهٔ ریموت را قبل از بسته‌شدن (خروج یا Logout) ایمن متوقف کن
+        try:
+            if hasattr(self, 'tab_new_record') and hasattr(self.tab_new_record, 'stop_watcher'):
+                self.tab_new_record.stop_watcher()
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def on_tab_changed(self, index):
         current_widget = self.tabs.widget(index)
         if hasattr(current_widget, 'load_data'): current_widget.load_data()
