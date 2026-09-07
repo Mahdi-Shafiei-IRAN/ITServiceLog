@@ -37,12 +37,12 @@ class LoginWindow(QDialog):
         layout.addSpacing(6)
 
         self.txt_username = QLineEdit()
-        self.txt_username.setPlaceholderText("نام کاربری (admin)")
+        self.txt_username.setPlaceholderText("نام کاربری")
         self.txt_username.setMinimumHeight(38)
         layout.addWidget(self.txt_username)
 
         self.txt_password = QLineEdit()
-        self.txt_password.setPlaceholderText("رمز عبور (admin)")
+        self.txt_password.setPlaceholderText("رمز عبور")
         self.txt_password.setEchoMode(QLineEdit.Password)
         self.txt_password.setMinimumHeight(38)
         self.txt_password.returnPressed.connect(self.check_login)

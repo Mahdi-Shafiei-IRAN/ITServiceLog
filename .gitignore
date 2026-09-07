@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Build artifacts
+build/
+dist/
+release/
+
+# Local build tools / environments (not part of the repo)
+/buildvenv/
+/innosetup/
+
+# Generated seed (contains data; rebuilt each release)
+assets/seed.sqlite

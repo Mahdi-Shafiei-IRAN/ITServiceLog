@@ -1,95 +1,37 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
-                               QTextEdit, QMessageBox, QGroupBox, QCompleter, QInputDialog,
-                               QFrame)
+                               QTextEdit, QMessageBox, QGroupBox, QCompleter, QInputDialog)
 from PySide6.QtCore import Qt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from database.models import Employee, Task, ServiceRecord, ServiceRecordTask, SystemDevice
-from services.remote_detector import (detect_sessions, format_system_label,
-                                       derive_person_name, is_remote_connected,
-                                       get_window_rect, is_offscreen_rect)
-from services import task_inference, session_ocr, screen_capture
-from services.debug_log import log as ai_log
+from services.remote_detector import detect_sessions, format_system_label
 
 class ServiceRecordPage(QWidget):
     def __init__(self, db_session: Session, current_technician):
         super().__init__()
         self.db = db_session
         self.technician = current_technician
-        self.watcher = None
-        self._infer_thread = None
         self.setup_ui()
         self.load_data()
-        self._init_watcher()
-
-    def _init_watcher(self):
-        """ناظرِ جلسهٔ ریموت را روی یک نخِ جدا راه می‌اندازد (در صورت خطا بی‌اثر).
-        توقفِ نخ توسطِ MainWindow.closeEvent انجام می‌شود (هم خروج و هم Logout)."""
-        try:
-            from services.session_watcher import SessionWatcher
-            self.watcher = SessionWatcher(self)
-            self.watcher.suggestion_ready.connect(self._on_suggestion)
-            self.watcher.start()
-        except Exception:
-            self.watcher = None
-
-    def stop_watcher(self):
-        """توقفِ ایمنِ نخ‌ها (از سمتِ MainWindow هنگام بسته‌شدن صدا زده می‌شود)."""
-        try:
-            if self.watcher is not None:
-                self.watcher.stop()
-        except Exception:
-            pass
-        try:
-            t = getattr(self, "_infer_thread", None)
-            if t is not None and t.isRunning():
-                t.wait(3000)
-        except Exception:
-            pass
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
 
-        # اگر نام سیستم پر شود، نام شخص به‌طور خودکار از روی آن حدس زده می‌شود؛
-        # این متغیر آخرین نامِ حدس‌زده‌شده را نگه می‌دارد تا نامِ دستیِ کاربر بازنویسی نشود.
-        self._last_derived = ""
-        # پیشنهادِ خودکارِ در انتظار (توضیح + موارد) از آخرین جلسهٔ ریموت
-        self._pending_suggestion = None
-
-        # بنر پیشنهادِ خودکار (پیش‌فرض پنهان است؛ پس از پایانِ جلسهٔ ریموت ظاهر می‌شود)
-        self.ai_banner = QFrame()
-        self.ai_banner.setStyleSheet(
-            "QFrame { background-color: #ECFDF5; border: 1px solid #34D399; border-radius: 6px; }")
-        ai_row = QHBoxLayout(self.ai_banner)
-        ai_row.setContentsMargins(10, 6, 10, 6)
-        self.ai_lbl = QLabel("")
-        self.ai_lbl.setWordWrap(True)
-        self.ai_lbl.setStyleSheet("border: none; background: transparent;")
-        btn_ai_dismiss = QPushButton("نادیده بگیر")
-        btn_ai_dismiss.setCursor(Qt.PointingHandCursor)
-        btn_ai_dismiss.clicked.connect(self._clear_suggestion)
-        ai_row.addWidget(self.ai_lbl, stretch=1)
-        ai_row.addWidget(btn_ai_dismiss)
-        self.ai_banner.setVisible(False)
-        layout.addWidget(self.ai_banner)
-
         # بخش مراجعه‌کننده (فقط فیلدهای متنی آزاد)
-        req_group = QGroupBox("مراجعه‌کننده (با پر شدن نام سیستم، نام فرد خودکار پر می‌شود)")
+        req_group = QGroupBox("مراجعه‌کننده (نام فرد را تایپ کنید)")
         req_layout = QHBoxLayout()
-
+        
         self.txt_req_name = QLineEdit()
-        self.txt_req_name.setPlaceholderText("نام شخص (اختیاری اگر سیستم پر باشد)...")
-
+        self.txt_req_name.setPlaceholderText("نام شخص (مثلاً: احمد محمدی)...")
+        
         self.txt_req_ext = QLineEdit()
         self.txt_req_ext.setPlaceholderText("شماره داخلی...")
-
+        
         self.txt_system = QLineEdit()
-        self.txt_system.setPlaceholderText("نام سیستم / IP (مثلاً it-sadeghi)...")
-        # با هر تغییر در نام سیستم، نام شخص را خودکار حدس بزن
-        self.txt_system.textChanged.connect(self._on_system_changed)
+        self.txt_system.setPlaceholderText("نام سیستم / IP...")
 
         # دکمهٔ دریافت خودکار نام/IP از نرم‌افزار ریموت (DameWare)
         self.btn_detect = QPushButton("دریافت از ریموت 🔄")
@@ -99,12 +41,6 @@ class ServiceRecordPage(QWidget):
             "border-radius: 4px; font-weight: bold;")
         self.btn_detect.clicked.connect(lambda: self.detect_remote(silent=False))
 
-        # دکمهٔ اجرای دستیِ دستیارِ خودکار: همین حالا از صفحهٔ ریموت OCR بگیر و پیشنهاد بده
-        self.btn_suggest = QPushButton("پیشنهاد از جلسهٔ فعلی 🤖")
-        self.btn_suggest.setToolTip("گرفتنِ فوریِ متنِ صفحهٔ ریموت و تشخیصِ خودکارِ توضیح و موارد")
-        self.btn_suggest.setCursor(Qt.PointingHandCursor)
-        self.btn_suggest.clicked.connect(self._manual_suggest)
-
         req_layout.addWidget(QLabel("نام:"))
         req_layout.addWidget(self.txt_req_name, stretch=2)
         req_layout.addWidget(QLabel("داخلی:"))
@@ -112,7 +48,6 @@ class ServiceRecordPage(QWidget):
         req_layout.addWidget(QLabel("سیستم:"))
         req_layout.addWidget(self.txt_system, stretch=1)
         req_layout.addWidget(self.btn_detect)
-        req_layout.addWidget(self.btn_suggest)
         req_group.setLayout(req_layout)
         layout.addWidget(req_group)
 
@@ -120,9 +55,9 @@ class ServiceRecordPage(QWidget):
         task_group = QGroupBox("عملیات انجام‌شده")
         task_layout = QVBoxLayout()
 
-        # جستجو در موارد (وقتی تعداد موارد زیاد شود کمک می‌کند)
+        # جعبه جستجو برای فیلتر کردن گزینه‌های درخت
         self.txt_task_search = QLineEdit()
-        self.txt_task_search.setPlaceholderText("جستجو در موارد... 🔍")
+        self.txt_task_search.setPlaceholderText("جستجوی گزینه‌ها...")
         self.txt_task_search.setClearButtonEnabled(True)
         self.txt_task_search.textChanged.connect(self._filter_tasks)
         task_layout.addWidget(self.txt_task_search)
@@ -135,7 +70,7 @@ class ServiceRecordPage(QWidget):
 
         # توضیحات و ثبت
         self.txt_notes = QTextEdit()
-        self.txt_notes.setPlaceholderText("توضیح کوتاه (اگر خالی بماند، خودکار از روی موارد تیک‌خورده ساخته می‌شود)...")
+        self.txt_notes.setPlaceholderText("توضیح کوتاه (اختیاری)...")
         self.txt_notes.setMaximumHeight(80)
         layout.addWidget(self.txt_notes)
 
@@ -169,174 +104,12 @@ class ServiceRecordPage(QWidget):
         # تلاش بی‌صدا برای پرکردن خودکار سیستم/IP از ریموت هنگام باز شدن صفحه
         self.detect_remote(silent=True)
 
-        # اگر پیشنهادِ خودکاری در انتظار است، تیک‌هایش را روی درختِ تازه‌ساخته دوباره اعمال کن
-        if getattr(self, "_pending_suggestion", None):
-            self._check_task_ids(set(self._pending_suggestion["result"]["task_ids"]))
-
-    # ------------------ حدس نام شخص از روی نام سیستم ------------------
-    def _name_is_auto(self):
-        """آیا محتوای فعلیِ فیلد نام، خالی یا همان مقدار حدس‌زده‌شده است؟"""
-        current = self.txt_req_name.text().strip()
-        return not current or current == self._last_derived
-
-    def _on_system_changed(self, text):
-        """با تغییر نام سیستم، اگر کاربر نامی دستی وارد نکرده باشد، نام را حدس بزن."""
-        if not self._name_is_auto():
-            return  # کاربر نام را دستی وارد کرده؛ دست نمی‌زنیم
-        derived = derive_person_name(text)
-        self._last_derived = derived
-        # جلوگیری از حلقهٔ سیگنال: فقط در صورت تفاوت، مقدار را ست کن
-        if self.txt_req_name.text() != derived:
-            self.txt_req_name.setText(derived)
-
-    # ------------------ جستجو در موارد ------------------
-    @staticmethod
-    def _norm(s):
-        """یکسان‌سازی حروف عربی/فارسی برای جستجوی بهتر."""
-        return (s or "").replace("ي", "ی").replace("ك", "ک").strip().lower()
-
-    def _filter_tasks(self, text):
-        """موارد درخت را بر اساس متن جستجو فیلتر می‌کند (شاخهٔ والدِ مورد یافته‌شده باز می‌ماند)."""
-        query = self._norm(text)
-        for i in range(self.task_tree.topLevelItemCount()):
-            self._filter_item(self.task_tree.topLevelItem(i), query)
-        if not query:
-            self.task_tree.expandAll()
-
-    def _filter_item(self, item, query):
-        """بازگشتی: مورد را در صورت تطابقِ خود یا یکی از زیرمواردش نمایش می‌دهد."""
-        self_match = query in self._norm(item.text(0))
-        child_match = False
-        for i in range(item.childCount()):
-            if self._filter_item(item.child(i), query):
-                child_match = True
-        visible = self_match or child_match
-        item.setHidden(not visible)
-        if child_match:
-            item.setExpanded(True)
-        return visible
-
-    # ------------------ پیشنهادِ خودکار از جلسهٔ ریموت (OCR) ------------------
-    def _on_suggestion(self, result, info):
-        """پیشنهادِ آماده (از مدلِ تصویری یا قواعد) را دریافت و روی فرم اعمال می‌کند."""
-        if not result or (not result.get("task_ids") and not result.get("description")):
-            return
-        self._pending_suggestion = {"result": result, "info": info}
-        self._apply_suggestion()
-
-    def _apply_suggestion(self):
-        """پیشنهادِ در انتظار را روی فرم اعمال می‌کند (فقط فیلدهای خالی را پر می‌کند)."""
-        sug = self._pending_suggestion
-        if not sug:
-            return
-        result, info = sug["result"], sug["info"]
-        label = info.get("label") or ""
-        if label and not self.txt_system.text().strip():
-            self.txt_system.setText(label)  # نام شخص هم از روی همین حدس زده می‌شود
-        if result.get("description") and not self.txt_notes.toPlainText().strip():
-            self.txt_notes.setPlainText(result["description"])
-        self._check_task_ids(set(result.get("task_ids", [])))
-        n = len(result.get("task_ids", []))
-        src = "هوش تصویری" if result.get("source") == "vision" else "قواعد"
-        self.ai_lbl.setText(
-            f"🤖 پیشنهاد خودکار ({src})"
-            + (f" — {label}" if label else "")
-            + f": {n} مورد تیک خورد و توضیح پیش‌نویس شد. لطفاً بررسی و «ثبت گزارش» کنید.")
-        self.ai_banner.setVisible(True)
-
-    def _check_task_ids(self, ids, root=None):
-        """موارد با شناسه‌های داده‌شده را تیک می‌زند و شاخهٔ والدشان را باز می‌کند."""
-        if not ids:
-            return
-        count = self.task_tree.topLevelItemCount() if root is None else root.childCount()
-        for i in range(count):
-            item = self.task_tree.topLevelItem(i) if root is None else root.child(i)
-            if item.data(0, Qt.UserRole) in ids:
-                item.setCheckState(0, Qt.Checked)
-                p = item.parent()
-                while p is not None:
-                    p.setExpanded(True)
-                    p = p.parent()
-            self._check_task_ids(ids, item)
-
-    def _clear_suggestion(self):
-        """بنر پیشنهاد را می‌بندد (تیک‌ها و متن‌های اعمال‌شده دست‌نخورده می‌مانند)."""
-        self._pending_suggestion = None
-        if self.ai_banner is not None:
-            self.ai_banner.setVisible(False)
-
-    def _manual_suggest(self):
-        """اجرای دستیِ دستیار: یک عکسِ فوری + شواهدِ جمع‌شده → تحلیل روی نخِ جدا."""
-        if getattr(self, "_infer_thread", None) is not None and self._infer_thread.isRunning():
-            return  # یک تحلیل در حال اجراست
-        ai_log("manual: کاربر «پیشنهاد از جلسهٔ فعلی» را زد")
-
-        hwnd = name = ip = None
-        accumulated = ""
-        if self.watcher is not None:
-            hwnd, name, ip = self.watcher.current_target()
-            accumulated = self.watcher.current_evidence()
-        else:
-            sessions = detect_sessions(resolve=False)
-            if sessions:
-                hwnd = sessions[0].get("hwnd")
-                name, ip = sessions[0].get("name"), sessions[0].get("ip")
-
-        # عکسِ فوری از پنجرهٔ ریموت (اگر پنجرهٔ مناسبی باشد)
-        fresh = screen_capture.capture_window(hwnd) if hwnd else None
-        one_shot = session_ocr.ocr_file(fresh) if fresh else ""
-        evidence = (accumulated + "\n" + one_shot).strip()
-        frames = [fresh] if fresh else []
-        ai_log(f"manual: hwnd={hwnd} frame={'yes' if fresh else 'no'} "
-               f"accumulated_chars={len(accumulated)} oneshot_chars={len(one_shot)}")
-
-        if not evidence and not frames:
-            QMessageBox.information(
-                self, "چیزی یافت نشد",
-                "تصویری از صفحهٔ ریموت گرفته نشد.\n"
-                "• مطمئن شوید پنجرهٔ DameWare باز و مینیمایز نیست.\n"
-                f"• جزئیات در فایل لاگ:\n{self._ai_log_path()}")
-            return
-
-        # تحلیل (که ممکن است مدل را صدا بزند) روی نخِ جدا تا UI قفل نشود
-        info = {"name": name, "ip": ip, "label": format_system_label(name, ip)}
-        self.btn_suggest.setEnabled(False)
-        self.btn_suggest.setText("در حال تحلیل… ⏳")
-        from services.session_watcher import InferenceThread
-        self._infer_thread = InferenceThread(evidence, frames, info, self)
-        self._infer_thread.done.connect(self._on_manual_done)
-        self._infer_thread.start()
-
-    def _on_manual_done(self, result, info):
-        self.btn_suggest.setEnabled(True)
-        self.btn_suggest.setText("پیشنهاد از جلسهٔ فعلی 🤖")
-        if result and (result.get("task_ids") or result.get("description")):
-            self._on_suggestion(result, info)
-        else:
-            QMessageBox.information(
-                self, "موردی تشخیص داده نشد",
-                "تصویر تحلیل شد ولی موردی تشخیص داده نشد.\n"
-                "اگر مدلِ تصویری نصب نیست، Ollama را راه‌اندازی کنید یا قوانینِ کلیدواژه را کامل‌تر کنید.\n"
-                f"لاگ:\n{self._ai_log_path()}")
-
-    @staticmethod
-    def _ai_log_path():
-        try:
-            from services.debug_log import log_path
-            return log_path()
-        except Exception:
-            return "(نامشخص)"
-
     # ------------------ تشخیص خودکار از نرم‌افزار ریموت ------------------
     def detect_remote(self, silent=True):
         """
         نام/IP دستگاه متصل را از پنجرهٔ DameWare می‌خواند و فیلد سیستم را پر می‌کند.
         silent=True یعنی حالت خودکار (بدون پیام خطا و بدون بازنویسی فیلدهای پرشده).
         """
-        # در حالتِ خودکار فقط وقتی واقعاً اتصال TCP برقرار است پر کن؛ وگرنه
-        # پنجرهٔ بازماندهٔ DameWare سیستمِ قبلی را به‌اشتباه نشان می‌دهد.
-        if silent and not is_remote_connected():
-            return
         try:
             sessions = detect_sessions(resolve=not silent)
         except Exception:
@@ -379,10 +152,8 @@ class ServiceRecordPage(QWidget):
             emp = matched
             if emp.internal_extension and (not silent or not self.txt_req_ext.text().strip()):
                 self.txt_req_ext.setText(emp.internal_extension)
-            # نامِ واقعیِ کارمند از دیتابیس بر نامِ حدس‌زده‌شده از روی سیستم اولویت دارد
-            if emp.full_name and (not silent or self._name_is_auto()):
+            if emp.full_name and (not silent or not self.txt_req_name.text().strip()):
                 self.txt_req_name.setText(emp.full_name)
-                self._last_derived = ""  # این نام واقعی است، دیگر حدسی نیست
 
         if not silent:
             extra = ""
@@ -429,6 +200,32 @@ class ServiceRecordPage(QWidget):
             child.setCheckState(0, Qt.Unchecked)
             self._add_sub_tasks(child, sub_task)
 
+    def _filter_tasks(self, text):
+        """فیلتر کردن درخت گزینه‌ها بر اساس متن جستجو.
+
+        هر آیتمی که خودش یا یکی از فرزندانش با متن هم‌خوانی داشته باشد نمایش داده
+        می‌شود؛ بقیه پنهان می‌شوند. با خالی‌بودن جستجو همه‌چیز دوباره نمایش داده می‌شود.
+        """
+        query = (text or "").strip().lower()
+
+        def apply(item):
+            # آیا این آیتم خودش هم‌خوانی دارد؟
+            self_match = query in item.text(0).lower()
+            # آیا یکی از فرزندان هم‌خوانی دارد؟ (به‌صورت بازگشتی)
+            child_match = False
+            for i in range(item.childCount()):
+                if apply(item.child(i)):
+                    child_match = True
+            visible = self_match or child_match or not query
+            item.setHidden(not visible)
+            # وقتی به خاطر جستجو چیزی پیدا شد، شاخه را باز کن تا دیده شود
+            if query and child_match:
+                item.setExpanded(True)
+            return visible
+
+        for i in range(self.task_tree.topLevelItemCount()):
+            apply(self.task_tree.topLevelItem(i))
+
     def get_checked_tasks(self, root=None, checked=None):
         if checked is None: checked = []
         iterator = range(self.task_tree.topLevelItemCount()) if root is None else range(root.childCount())
@@ -439,67 +236,52 @@ class ServiceRecordPage(QWidget):
             self.get_checked_tasks(item, checked)
         return checked
 
-    def _checked_task_titles(self, root=None, titles=None):
-        """عنوانِ همهٔ مواردِ تیک‌خورده را برای ساختِ توضیح خودکار برمی‌گرداند."""
-        if titles is None:
-            titles = []
-        count = self.task_tree.topLevelItemCount() if root is None else root.childCount()
-        for i in range(count):
-            item = self.task_tree.topLevelItem(i) if root is None else root.child(i)
-            if item.checkState(0) == Qt.Checked:
-                titles.append(item.text(0))
-            self._checked_task_titles(item, titles)
-        return titles
-
     def save_record(self):
         name = self.txt_req_name.text().strip()
-        system = self.txt_system.text().strip()
         tasks = self.get_checked_tasks()
 
+        # نام اختیاری است؛ فقط انتخاب حداقل یک عملیات الزامی است.
         if not tasks:
             QMessageBox.warning(self, "خطا", "انتخاب حداقل یک عملیات الزامی است.")
             return
-        # نام شخص وقتی نام سیستم پر است اجباری نیست؛ در این حالت از روی سیستم ساخته می‌شود
-        if not name:
-            name = derive_person_name(system) or system
-        if not name:
-            QMessageBox.warning(self, "خطا", "نام شخص یا نام سیستم را وارد کنید.")
-            return
 
-        employee = self.db.query(Employee).filter_by(full_name=name).first()
-        if not employee:
-            employee = Employee(full_name=name, internal_extension=self.txt_req_ext.text().strip())
-            self.db.add(employee)
-            self.db.flush()
-
-        # اگر توضیحی وارد نشده باشد، از روی مواردِ تیک‌خورده یک توضیح کوتاهِ خودکار بساز
-        description = self.txt_notes.toPlainText().strip()
-        if not description:
-            description = "، ".join(self._checked_task_titles())
+        # اگر نام وارد شده باشد، کارمند را پیدا/ایجاد می‌کنیم؛ در غیر این صورت
+        # از یک کارمند پیش‌فرض «نامشخص» استفاده می‌کنیم تا نام اختیاری بماند.
+        if name:
+            employee = self.db.query(Employee).filter_by(full_name=name).first()
+            if not employee:
+                employee = Employee(full_name=name, internal_extension=self.txt_req_ext.text().strip())
+                self.db.add(employee)
+                self.db.flush()
+            requester_name = employee.full_name
+        else:
+            employee = self.db.query(Employee).filter_by(full_name="نامشخص").first()
+            if not employee:
+                employee = Employee(full_name="نامشخص", internal_extension="")
+                self.db.add(employee)
+                self.db.flush()
+            requester_name = ""  # در گزارش‌ها خالی نمایش داده می‌شود
 
         record = ServiceRecord(
             technician_id=self.technician.id,
             requester_employee_id=employee.id,
             technician_name_snapshot=self.technician.full_name,
-            requester_name_snapshot=employee.full_name,
+            requester_name_snapshot=requester_name,
             requester_extension_snapshot=self.txt_req_ext.text().strip(),
-            system_name_snapshot=system,
-            short_description=description
+            system_name_snapshot=self.txt_system.text().strip(),
+            short_description=self.txt_notes.toPlainText()
         )
         self.db.add(record)
-
+        
         # کلید حل مشکل ثبت نشدن تیک‌ها این دستور است!
-        self.db.flush()
-
+        self.db.flush() 
+        
         for task_id in tasks:
             self.db.add(ServiceRecordTask(service_record_id=record.id, task_id=task_id))
-
+            
         self.db.commit()
         QMessageBox.information(self, "موفق", "گزارش شما سریعاً ثبت شد.")
-
-        self._last_derived = ""
-        self._clear_suggestion()
+        
         self.txt_req_name.clear(); self.txt_req_ext.clear()
         self.txt_system.clear(); self.txt_notes.clear()
-        self.txt_task_search.clear()
         self.load_data()
