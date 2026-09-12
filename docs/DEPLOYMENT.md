@@ -1,4 +1,4 @@
-# راه‌اندازی روی سرور شرکت (دیتابیس مشترک + اکتیودایرکتوری)
+# راه‌اندازی روی سرور شرکت (دیتابیس مشترک PostgreSQL + اکتیودایرکتوری)
 
 هدف: همه‌ی کارشناسان روی **یک دیتابیس واحد** کار کنند و با **اکانت دامنه‌ی خودشان** وارد شوند.
 
@@ -10,60 +10,33 @@
 
 | مورد | پیشنهاد |
 |---|---|
-| سیستم‌عامل | **Windows Server 2019 یا 2022** (Standard) — عضو دامنه |
-| نقش | فقط Database Server (نیازی به IIS یا وب نیست) |
-| دیتابیس | **SQL Server 2019/2022 Express** — رایگان، تا ۱۰ گیگابایت، برای این حجم داده کاملاً کافی است |
+| سیستم‌عامل | Windows Server 2019/2022 یا یک VM لینوکسی (Ubuntu Server) — عضو یا قابل‌دسترس از دامنه |
+| دیتابیس | **PostgreSQL 16** (رایگان و اوپن‌سورس) |
 | CPU / RAM | ۲ تا ۴ هسته، ۸ گیگ رم |
 | دیسک | ۵۰ گیگ (دیتابیس این برنامه در سال به چند ده مگابایت هم نمی‌رسد) |
-| بکاپ | Maintenance Plan روزانه + کپی روی شیر شبکه |
+| بکاپ | `pg_dump` روزانه‌ی خودکار + کپی روی شیر شبکه |
 
-> اگر سرور فیزیکی جدا ندارید، می‌توانید SQL Express را روی همان سرور فایل/دامنه‌ی موجود نصب کنید. **توصیه نمی‌شود** دیتابیس را روی یک شیر شبکه (`\\server\share\database.sqlite`) بگذارید؛ SQLite روی شبکه با چند کاربر همزمان خراب می‌شود.
-
-### گزینه‌ی جایگزین
-اگر ترجیح می‌دهید اوپن‌سورس باشد: **PostgreSQL 16** روی همان Windows Server یا یک VM لینوکسی. برنامه هر دو را پشتیبانی می‌کند (فقط `db_url` فرق می‌کند).
+> **توصیه نمی‌شود** دیتابیس را روی یک شیر شبکه (`\\server\share\database.sqlite`) بگذارید؛ SQLite روی شبکه با چند کاربر همزمان خراب می‌شود. برای کار اشتراکی حتماً PostgreSQL.
 
 ---
 
-## ۲) مراحل نصب روی سرور
+## ۲) نصب PostgreSQL روی سرور
 
-### الف) نصب SQL Server Express
-1. دانلود «SQL Server 2022 Express» → نصب نوع **Basic**.
-2. در Configuration Manager:
-   - **TCP/IP** را برای instance فعال کنید.
-   - پورت ثابت **1433** را ست کنید (یا SQL Browser را روشن بگذارید).
-   - سرویس SQL Server را restart کنید.
-3. در فایروال ویندوز، پورت **1433/TCP** را برای شبکه‌ی داخلی باز کنید.
-
-### ب) ساخت دیتابیس و دسترسی‌ها (با Windows Authentication)
-در SQL Server Management Studio:
+1. نصب PostgreSQL 16 (روی ویندوز از installer رسمی، روی اوبونتو `apt install postgresql`).
+2. ساخت دیتابیس و کاربر برنامه:
 
 ```sql
-CREATE DATABASE ITServiceLog;
-GO
-
--- یک گروه در اکتیودایرکتوری بسازید (مثلاً IT-ServiceLog-Users)
--- و همه‌ی کارشناسان IT و سایت را عضو آن کنید، سپس:
-CREATE LOGIN [COMPANY\IT-ServiceLog-Users] FROM WINDOWS;
-GO
-
-USE ITServiceLog;
-CREATE USER [COMPANY\IT-ServiceLog-Users] FOR LOGIN [COMPANY\IT-ServiceLog-Users];
-ALTER ROLE db_datareader ADD MEMBER [COMPANY\IT-ServiceLog-Users];
-ALTER ROLE db_datawriter ADD MEMBER [COMPANY\IT-ServiceLog-Users];
-GO
-
--- فقط برای اولین اجرا (ساخت خودکار جدول‌ها) به یک حساب با دسترسی ddl_admin نیاز است:
--- ALTER ROLE db_ddladmin ADD MEMBER [COMPANY\IT-ServiceLog-Users];
+CREATE USER itapp WITH PASSWORD 'یک-رمز-قوی';
+CREATE DATABASE itservicelog OWNER itapp;
 ```
 
-> پیشنهاد: بار اول برنامه را با حساب مدیر (که `db_owner` است) اجرا کنید تا جدول‌ها ساخته شوند، بعد `db_ddladmin` را بردارید.
+3. اجازه‌ی اتصال از شبکه‌ی داخلی:
+   - در `postgresql.conf`:  `listen_addresses = '*'`
+   - در `pg_hba.conf` یک خط برای رنج شبکه‌ی شرکت (مثلاً `10.0.0.0/8`) با متد `scram-sha-256` اضافه کنید.
+   - سرویس PostgreSQL را restart کنید.
+4. پورت **5432/TCP** را در فایروال برای شبکه‌ی داخلی باز کنید.
 
-### ج) نصب درایور روی کلاینت‌ها
-روی هر کامپیوتری که برنامه نصب می‌شود، **ODBC Driver 17 (یا 18) for SQL Server** باید نصب باشد (یک فایل کوچک از سایت مایکروسافت — قابل توزیع با Group Policy).
-
-> **نکته‌ی مهم برای ساخت نسخه‌ی نصبی:** پیش از اجرای `build.ps1` باید در محیط build دستور
-> `pip install pyodbc` را زده باشید، وگرنه کتابخانه داخل فایل exe قرار نمی‌گیرد و اتصال به
-> SQL Server کار نخواهد کرد. (اگر فقط SQLite محلی لازم دارید، نیازی به این کار نیست.)
+> کتابخانه‌ی اتصال (`psycopg2`) داخل نسخه‌ی نصبی برنامه بسته‌بندی شده است؛ روی کلاینت‌ها **نیازی به نصب چیز اضافه‌ای نیست**.
 
 ---
 
@@ -73,7 +46,7 @@ GO
 
 ```json
 {
-  "db_url": "mssql+pyodbc://@SRV-APP\\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes",
+  "db_url": "postgresql+psycopg2://itapp:PASSWORD@SRV-DB:5432/itservicelog",
   "ad": {
     "enabled": true,
     "domain": "company.local",
@@ -84,7 +57,7 @@ GO
 }
 ```
 
-نمونه‌ی آماده در `config.example.json` کنار همین برنامه هست.
+`SRV-DB` را با نام یا IP سرور دیتابیس و `PASSWORD` را با رمز کاربر `itapp` جایگزین کنید. نمونه‌ی آماده در `config.example.json` کنار همین برنامه هست.
 
 **مسیرهایی که برنامه دنبال این فایل می‌گردد (به ترتیب):**
 1. مسیر متغیر محیطی `ITSERVICELOG_CONFIG`
@@ -94,7 +67,9 @@ GO
 
 می‌توانید به‌جای فایل، فقط متغیر محیطی `ITSERVICELOG_DB` را با آدرس اتصال ست کنید.
 
-اگر هیچ‌کدام نباشد، برنامه دقیقاً مثل قبل روی SQLite محلی کار می‌کند — پس نصب‌های فعلی بدون تغییر ادامه می‌دهند.
+اگر هیچ‌کدام نباشد، برنامه دقیقاً مثل قبل روی SQLite محلی کار می‌کند — پس نصب‌های تک‌کاربره‌ی فعلی بدون تغییر ادامه می‌دهند.
+
+> جدول‌ها بار اول به‌صورت خودکار ساخته می‌شوند (کاربر `itapp` چون owner دیتابیس است این دسترسی را دارد). برنامه هنگام هر بار بالا آمدن، ستون‌های جدید نسخه‌ها را هم خودکار اضافه می‌کند؛ پس آپدیت‌ها بدون از دست رفتن داده انجام می‌شوند.
 
 ---
 
@@ -111,23 +86,37 @@ GO
 
 ## ۵) انتقال داده‌های فعلی به سرور
 
-داده‌های موجود در `%APPDATA%\ITServiceLog\database.sqlite` است. برای انتقال:
+داده‌های موجود در `%APPDATA%\ITServiceLog\database.sqlite` است. برای انتقال به PostgreSQL:
 
-1. برنامه را یک‌بار با `config.json` اجرا کنید تا جدول‌های خالی روی SQL Server ساخته شوند.
-2. با ابزار **SQL Server Import and Export Wizard** (یا DBeaver) جدول‌ها را از فایل SQLite به SQL Server کپی کنید — به ترتیب:
+1. برنامه را یک‌بار با `config.json` اجرا کنید تا جدول‌های خالی روی PostgreSQL ساخته شوند.
+2. با ابزار **pgloader** (`pgloader sqlite_file postgres_url`) یا DBeaver، جدول‌ها را از فایل SQLite به PostgreSQL کپی کنید — به ترتیب:
    `technicians` → `systems` → `employees` → `tasks` → `service_records` → `service_record_tasks`
-3. بعد از انتقال، مقدار `IDENTITY` هر جدول را بررسی کنید (`DBCC CHECKIDENT`).
-
-> برنامه هنگام بالا آمدن، ستون‌های جدید نسخه‌ها را **خودکار** به دیتابیس موجود اضافه می‌کند؛ پس دیتابیس قدیمی شما بدون از دست رفتن داده به‌روز می‌شود.
+3. بعد از انتقال، مقدار sequence هر جدول را sync کنید، مثلاً:
+   ```sql
+   SELECT setval('tasks_id_seq', (SELECT MAX(id) FROM tasks));
+   ```
+   (برای هر جدولی که ستون id دارد.)
 
 ---
 
 ## ۶) چک‌لیست نهایی
 
-- [ ] SQL Express نصب، TCP/IP فعال، پورت ۱۴۳۳ در فایروال باز
-- [ ] دیتابیس `ITServiceLog` ساخته شده و گروه AD دسترسی خواندن/نوشتن دارد
-- [ ] ODBC Driver روی کلاینت‌ها نصب است
+- [ ] PostgreSQL نصب، دیتابیس و کاربر `itapp` ساخته شده
+- [ ] `listen_addresses` و `pg_hba.conf` برای شبکه‌ی داخلی تنظیم، پورت ۵۴۳۲ در فایروال باز
 - [ ] `config.json` روی کلاینت‌ها (ترجیحاً از طریق GPO در `%PROGRAMDATA%`)
-- [ ] بکاپ روزانه‌ی دیتابیس فعال است
+- [ ] بکاپ روزانه‌ی `pg_dump` فعال است
 - [ ] رمز حساب `admin` عوض شده است
 - [ ] بخش هر کاربر (IT / سایت / هر دو) در «مدیریت کاربران» تنظیم شده است
+
+---
+
+## گزینه‌ی جایگزین: SQL Server
+
+اگر شرکت از قبل SQL Server دارد، همین برنامه با آن هم کار می‌کند — فقط `db_url` را
+عوض کنید و روی کلاینت‌ها **ODBC Driver 17/18 for SQL Server** نصب باشد:
+
+```
+mssql+pyodbc://@SRV-DB\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes
+```
+
+> برای بسته‌بندی پشتیبانی SQL Server در نسخه‌ی نصبی، پیش از `build.ps1` باید در محیط build دستور `pip install pyodbc` را هم زده باشید. (پشتیبانی PostgreSQL به‌صورت پیش‌فرض بسته‌بندی می‌شود.)

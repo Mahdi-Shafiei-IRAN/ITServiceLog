@@ -48,6 +48,7 @@ _NEW_COLUMNS = [
     ("technicians", "department", "VARCHAR(10)"),
     ("tasks", "department", "VARCHAR(10)"),
     ("tasks", "requires_name", "BOOLEAN"),
+    ("tasks", "position", "INTEGER"),
     ("service_records", "department", "VARCHAR(10)"),
     ("service_records", "report_date", "DATE"),
     ("service_record_tasks", "quantity", "INTEGER"),
@@ -78,6 +79,9 @@ def _migrate():
                 "UPDATE tasks SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
             conn.execute(text(
                 "UPDATE tasks SET requires_name = 0 WHERE requires_name IS NULL"))
+            # ترتیب اولیه‌ی رکوردهای قدیمی بر اساس شناسه تا جابه‌جایی دستی بعداً ممکن شود
+            conn.execute(text(
+                "UPDATE tasks SET position = id WHERE position IS NULL OR position = 0"))
         if "technicians" in existing_tables:
             conn.execute(text(
                 "UPDATE technicians SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})

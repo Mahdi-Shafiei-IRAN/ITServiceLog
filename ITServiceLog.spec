@@ -1,14 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_submodules
+
+hiddenimports = ['psycopg2', 'sqlalchemy.dialects.postgresql.psycopg2',
+                 'pyodbc', 'sqlalchemy.dialects.mssql.pyodbc']
+hiddenimports += collect_submodules('sqlalchemy')
 
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
-    # برای اجرای شبکه‌ای: اگر pyodbc در محیط build نصب باشد، داخل بسته قرار می‌گیرد.
-    # (اگر نصب نباشد PyInstaller فقط هشدار می‌دهد و برنامه روی SQLite کار می‌کند.)
-    hiddenimports=['pyodbc', 'sqlalchemy.dialects.mssql.pyodbc'],
+    datas=[('assets/app.ico', 'assets'), ('assets/seed.sqlite', 'assets'), ('config.example.json', '.')],
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -34,6 +37,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['assets/app.ico'],
 )
 coll = COLLECT(
     exe,

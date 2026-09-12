@@ -62,6 +62,22 @@ class TasksPage(QWidget):
 
         # نوار عملیات روی آیتم انتخاب‌شده
         action_bar = QHBoxLayout()
+
+        btn_up = QPushButton("▲ بالا")
+        btn_up.setToolTip("انتقال مورد انتخاب‌شده به بالا (اولویت بیشتر)")
+        btn_up.setProperty("variant", "ghost")
+        btn_up.setCursor(Qt.PointingHandCursor)
+        btn_up.clicked.connect(self.move_up)
+
+        btn_down = QPushButton("▼ پایین")
+        btn_down.setToolTip("انتقال مورد انتخاب‌شده به پایین (اولویت کمتر)")
+        btn_down.setProperty("variant", "ghost")
+        btn_down.setCursor(Qt.PointingHandCursor)
+        btn_down.clicked.connect(self.move_down)
+
+        action_bar.addWidget(btn_up)
+        action_bar.addWidget(btn_down)
+
         btn_rename = QPushButton("ویرایش عنوان")
         btn_rename.setCursor(Qt.PointingHandCursor)
         btn_rename.clicked.connect(self.rename_task)
@@ -96,7 +112,8 @@ class TasksPage(QWidget):
         self.tree.itemDoubleClicked.connect(lambda *_: self.rename_task())
         layout.addWidget(self.tree)
 
-        hint = QLabel("برای افزودن زیرمجموعه یا ویرایش/حذف، ابتدا یک مورد را از درخت انتخاب کنید.")
+        hint = QLabel("ابتدا یک مورد را از درخت انتخاب کنید، سپس با دکمه‌های ▲/▼ اولویت آن را "
+                      "جابه‌جا کنید یا ویرایش/حذف بزنید.")
         hint.setObjectName("Muted")
         layout.addWidget(hint)
 
@@ -112,6 +129,7 @@ class TasksPage(QWidget):
                      .filter(Task.parent_task_id.is_(None),
                              Task.is_active.is_(True),
                              Task.department == dept)
+                     .order_by(Task.position, Task.id)
                      .all())
         for task in top_tasks:
             item = self._make_item(self.tree, task)
@@ -127,10 +145,14 @@ class TasksPage(QWidget):
         return item
 
     def _load_sub_tasks(self, parent_item, parent_task):
-        for sub in parent_task.sub_tasks:
+        for sub in self._ordered_children(parent_task):
             if sub.is_active:
                 child = self._make_item(parent_item, sub)
                 self._load_sub_tasks(child, sub)
+
+    @staticmethod
+    def _ordered_children(parent_task):
+        return sorted(parent_task.sub_tasks, key=lambda t: ((t.position or 0), t.id))
 
     def _selected_id(self):
         item = self.tree.currentItem()
@@ -172,12 +194,53 @@ class TasksPage(QWidget):
             parent_task_id=parent_id,
             department=self.current_department(),
             requires_name=self.chk_requires_name.isChecked(),
+            position=self._next_position(parent_id),
         ))
         self.db.commit()
 
         self.txt_title.clear()
         self.chk_requires_name.setChecked(False)
         self.load_tasks()
+
+    def _siblings(self, parent_id):
+        """هم‌ردیف‌های یک آیتم (هم‌بخش و هم‌والد)، مرتب‌شده بر اساس اولویت."""
+        return (self.db.query(Task)
+                .filter(Task.parent_task_id == parent_id if parent_id
+                        else Task.parent_task_id.is_(None),
+                        Task.is_active.is_(True),
+                        Task.department == self.current_department())
+                .order_by(Task.position, Task.id)
+                .all())
+
+    def _next_position(self, parent_id):
+        sibs = self._siblings(parent_id)
+        return (max((s.position or 0) for s in sibs) + 1) if sibs else 1
+
+    def move_up(self):
+        self._move(-1)
+
+    def move_down(self):
+        self._move(1)
+
+    def _move(self, delta):
+        task = self._selected_task()
+        if not task:
+            return
+        sibs = self._siblings(task.parent_task_id)
+        # اطمینان از یکتا بودن مقادیر position پیش از جابه‌جایی
+        for i, s in enumerate(sibs, start=1):
+            s.position = i
+        idx = next((i for i, s in enumerate(sibs) if s.id == task.id), None)
+        if idx is None:
+            return
+        new_idx = idx + delta
+        if new_idx < 0 or new_idx >= len(sibs):
+            return  # به ابتدا/انتهای لیست رسیده‌ایم
+        other = sibs[new_idx]
+        task.position, other.position = other.position, task.position
+        self.db.commit()
+        self.load_tasks()
+        self._select_by_id(task.id)
 
     def rename_task(self):
         task = self._selected_task()

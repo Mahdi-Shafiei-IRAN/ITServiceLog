@@ -13,16 +13,14 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QPushButton, QTreeWidget, QTreeWidgetItem, QSpinBox,
                                QTextEdit, QMessageBox, QGroupBox, QDateEdit, QTableWidget,
                                QTableWidgetItem, QComboBox, QHeaderView, QSplitter,
-                               QAbstractItemView, QInputDialog, QCompleter)
+                               QAbstractItemView, QCompleter)
 from PySide6.QtCore import Qt, QDate
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.models import (Task, ServiceRecord, ServiceRecordTask, Employee,
-                             SystemDevice, DEPT_IT, DEPT_LABELS)
-from services.remote_detector import detect_sessions, format_system_label
+                             DEPT_IT, DEPT_LABELS)
 
-NAMED_COLUMNS = ["خدمت", "نام فرد", "داخلی", "سیستم / IP", "توضیح"]
+NAMED_COLUMNS = ["خدمت", "نام فرد", "داخلی", "توضیح"]
 
 
 class DailyEntryPage(QWidget):
@@ -114,15 +112,8 @@ class DailyEntryPage(QWidget):
         btn_del_row.setCursor(Qt.PointingHandCursor)
         btn_del_row.clicked.connect(self.remove_named_row)
 
-        self.btn_detect = QPushButton("دریافت سیستم از ریموت 🔄")
-        self.btn_detect.setProperty("variant", "ghost")
-        self.btn_detect.setToolTip("خواندن نام سیستم و IP از پنجرهٔ باز DameWare و پر کردن ردیف انتخاب‌شده")
-        self.btn_detect.setCursor(Qt.PointingHandCursor)
-        self.btn_detect.clicked.connect(self.detect_remote)
-
         named_bar.addWidget(btn_add_row)
         named_bar.addWidget(btn_del_row)
-        named_bar.addWidget(self.btn_detect)
         named_bar.addStretch()
         named_layout.addLayout(named_bar)
 
@@ -132,11 +123,10 @@ class DailyEntryPage(QWidget):
         self.named_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.named_table.verticalHeader().setVisible(False)
         header = self.named_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(4, QHeaderView.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # خدمت
+        header.setSectionResizeMode(1, QHeaderView.Stretch)           # نام فرد
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # داخلی
+        header.setSectionResizeMode(3, QHeaderView.Stretch)           # توضیح
         named_layout.addWidget(self.named_table)
 
         self.lbl_named_hint = QLabel("")
@@ -187,7 +177,13 @@ class DailyEntryPage(QWidget):
     def _active_tasks(self):
         return (self.db.query(Task)
                 .filter(Task.is_active.is_(True), Task.department == self.department)
+                .order_by(Task.position, Task.id)
                 .all())
+
+    @staticmethod
+    def _ordered_children(parent_task):
+        active = [s for s in parent_task.sub_tasks if s.is_active]
+        return sorted(active, key=lambda t: ((t.position or 0), t.id))
 
     def _build_task_tree(self):
         self.task_tree.clear()
@@ -196,40 +192,25 @@ class DailyEntryPage(QWidget):
 
         roots = [t for t in self._active_tasks() if t.parent_task_id is None]
         for task in roots:
+            if task.requires_name:
+                continue  # خدمات نام‌دار در جدول سمت دیگر ثبت می‌شوند
             item = QTreeWidgetItem(self.task_tree, [task.title, ""])
             item.setData(0, Qt.UserRole, task.id)
+            self._attach_spin(item, task)          # سردسته‌ها هم قابل شمارش‌اند
             self._add_branch(item, task)
-            # دسته‌ای که هیچ فرزند شمارشی ندارد بی‌فایده است
-            if item.childCount() == 0 and not self._is_counting_leaf(task):
-                idx = self.task_tree.indexOfTopLevelItem(item)
-                self.task_tree.takeTopLevelItem(idx)
-                continue
-            if self._is_counting_leaf(task):
-                self._attach_spin(item, task)
         self.task_tree.expandAll()
 
         self._refresh_named_task_list()
 
-    def _is_counting_leaf(self, task):
-        """برگ‌های غیرنام‌دار شمارش می‌شوند؛ دسته‌های دارای زیرمجموعه فقط گروه‌بندی‌اند."""
-        if task.requires_name:
-            return False
-        return not any(s.is_active for s in task.sub_tasks)
-
     def _add_branch(self, parent_item, parent_task):
-        for sub in parent_task.sub_tasks:
-            if not sub.is_active:
-                continue
+        for sub in self._ordered_children(parent_task):
             if sub.requires_name:
                 # خدمات نام‌دار در جدول سمت دیگر ثبت می‌شوند، نه در درخت شمارش
                 continue
             item = QTreeWidgetItem(parent_item, [sub.title, ""])
             item.setData(0, Qt.UserRole, sub.id)
+            self._attach_spin(item, sub)           # هر خدمت (سردسته یا زیرمجموعه) تعداد دارد
             self._add_branch(item, sub)
-            if self._is_counting_leaf(sub):
-                self._attach_spin(item, sub)
-            elif item.childCount() == 0:
-                parent_item.removeChild(item)
 
     def _attach_spin(self, item, task):
         spin = QSpinBox()
@@ -240,9 +221,9 @@ class DailyEntryPage(QWidget):
         self.count_widgets[task.id] = spin
 
     def _refresh_named_task_list(self):
+        # ترتیب بر اساس اولویت (position) که از _active_tasks می‌آید
         self.named_tasks = [(t.id, self._full_title(t))
                             for t in self._active_tasks() if t.requires_name]
-        self.named_tasks.sort(key=lambda x: x[1])
         if self.named_tasks:
             self.lbl_named_hint.setText(
                 "این خدمات در «مدیریت خدمات» با گزینه‌ی «نیاز به نام فرد» علامت خورده‌اند.")
@@ -293,8 +274,7 @@ class DailyEntryPage(QWidget):
         for line in self.record.tasks:
             if line.person_name:
                 self.add_named_row(task_id=line.task_id, name=line.person_name,
-                                   ext=line.person_extension, system=line.system_name,
-                                   note=line.note)
+                                   ext=line.person_extension, note=line.note)
             else:
                 spin = self.count_widgets.get(line.task_id)
                 if spin:
@@ -305,7 +285,7 @@ class DailyEntryPage(QWidget):
             spin.setValue(0)
 
     # ------------------------------------------------------ جدول نام‌دارها
-    def add_named_row(self, task_id=None, name="", ext="", system="", note=""):
+    def add_named_row(self, task_id=None, name="", ext="", note=""):
         if not self.named_tasks:
             QMessageBox.information(
                 self, "توجه",
@@ -330,9 +310,10 @@ class DailyEntryPage(QWidget):
         txt_name.setCompleter(completer)
         self.named_table.setCellWidget(row, 1, txt_name)
 
-        self.named_table.setCellWidget(row, 2, QLineEdit(ext or ""))
-        self.named_table.setCellWidget(row, 3, QLineEdit(system or ""))
-        self.named_table.setCellWidget(row, 4, QLineEdit(note or ""))
+        ext_edit = QLineEdit(ext or ""); ext_edit.setPlaceholderText("داخلی...")
+        self.named_table.setCellWidget(row, 2, ext_edit)
+        note_edit = QLineEdit(note or ""); note_edit.setPlaceholderText("توضیح (اختیاری)...")
+        self.named_table.setCellWidget(row, 3, note_edit)
 
         self.named_table.setCurrentCell(row, 1)
         return row
@@ -350,65 +331,10 @@ class DailyEntryPage(QWidget):
             cmb = self.named_table.cellWidget(row, 0)
             name = self.named_table.cellWidget(row, 1).text().strip()
             ext = self.named_table.cellWidget(row, 2).text().strip()
-            system = self.named_table.cellWidget(row, 3).text().strip()
-            note = self.named_table.cellWidget(row, 4).text().strip()
-            rows.append({"row": row + 1, "task_id": cmb.currentData(), "name": name,
-                         "ext": ext, "system": system, "note": note})
+            note = self.named_table.cellWidget(row, 3).text().strip()
+            rows.append({"row": row + 1, "task_id": cmb.currentData(),
+                         "name": name, "ext": ext, "note": note})
         return rows
-
-    # ------------------------------------------------ تشخیص از نرم‌افزار ریموت
-    def detect_remote(self):
-        row = self.named_table.currentRow()
-        if row < 0:
-            row = self.add_named_row()
-            if row is None:
-                return
-        try:
-            sessions = detect_sessions(resolve=True)
-        except Exception:
-            sessions = []
-        if not sessions:
-            QMessageBox.information(self, "ریموت یافت نشد",
-                                    "پنجرهٔ فعال DameWare پیدا نشد.")
-            return
-
-        session = sessions[0]
-        if len(sessions) > 1:
-            labels = [format_system_label(s["name"], s["ip"]) or s["title"] for s in sessions]
-            choice, ok = QInputDialog.getItem(
-                self, "انتخاب سیستم", "چند اتصال DameWare باز است. کدام؟", labels, 0, False)
-            if not ok:
-                return
-            session = sessions[labels.index(choice)]
-
-        label = format_system_label(session["name"], session["ip"])
-        if not label:
-            return
-        self.named_table.cellWidget(row, 3).setText(label)
-
-        emp = self._lookup_mapping(session["name"], session["ip"])
-        if emp:
-            if not self.named_table.cellWidget(row, 1).text().strip():
-                self.named_table.cellWidget(row, 1).setText(emp.full_name or "")
-            if not self.named_table.cellWidget(row, 2).text().strip():
-                self.named_table.cellWidget(row, 2).setText(emp.internal_extension or "")
-
-    def _lookup_mapping(self, name, ip):
-        try:
-            device = None
-            if name:
-                device = (self.db.query(SystemDevice)
-                          .filter(func.lower(SystemDevice.system_name) == name.lower())
-                          .first())
-            if not device and ip:
-                device = (self.db.query(SystemDevice)
-                          .filter(SystemDevice.ip_address == ip).first())
-            if not device:
-                return None
-            return (self.db.query(Employee)
-                    .filter_by(system_id=device.id, is_active=True).first())
-        except Exception:
-            return None
 
     # --------------------------------------------------------------- فیلتر
     def _filter_tasks(self, text):
@@ -483,7 +409,6 @@ class DailyEntryPage(QWidget):
                 quantity=1,
                 person_name=item["name"],
                 person_extension=item["ext"],
-                system_name=item["system"],
                 note=item["note"],
             ))
 

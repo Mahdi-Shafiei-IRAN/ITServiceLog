@@ -1,11 +1,10 @@
 {
   "_توضیح": "این فایل را به config.json تغییر نام دهید تا فعال شود. اگر config.json وجود نداشته باشد، برنامه روی SQLite محلی (%APPDATA%\\ITServiceLog) کار می‌کند.",
 
-  "_db_url_نمونه_SQLServer": "mssql+pyodbc://@SRV-APP\\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes",
-  "_db_url_نمونه_SQLServer_با_کاربر": "mssql+pyodbc://itapp:PASSWORD@SRV-APP,1433/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server",
-  "_db_url_نمونه_PostgreSQL": "postgresql+psycopg2://itapp:PASSWORD@SRV-APP:5432/itservicelog",
+  "_db_url_نمونه_PostgreSQL": "postgresql+psycopg2://itapp:PASSWORD@SRV-DB:5432/itservicelog",
+  "_db_url_نمونه_SQLServer": "mssql+pyodbc://@SRV-DB\\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes",
 
-  "db_url": "mssql+pyodbc://@SRV-APP\\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes",
+  "db_url": "postgresql+psycopg2://itapp:PASSWORD@SRV-DB:5432/itservicelog",
 
   "ad": {
     "enabled": true,

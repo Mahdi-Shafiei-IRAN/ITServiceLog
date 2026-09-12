@@ -85,7 +85,7 @@ def export_records_to_excel(filepath, records, technician=None, date_range=None)
     # ---------------- شیت ۳: خدمات نام‌دار ----------------
     ws3 = _new_sheet(wb, "خدمات نام‌دار", [
         "ردیف", "تاریخ", "بخش", "کارشناس", "خدمت",
-        "نام فرد", "داخلی", "سیستم / IP", "توضیح"
+        "نام فرد", "داخلی", "توضیح"
     ])
     row = 2
     for record in records:
@@ -98,14 +98,12 @@ def export_records_to_excel(filepath, records, technician=None, date_range=None)
                 line.task.title if line.task else "-",
                 line.person_name or "-",
                 line.person_extension or "-",
-                line.system_name or "-",
                 line.note or "-",
             ], wrap_from=5)
             row += 1
     ws3.column_dimensions['E'].width = 30
     ws3.column_dimensions['F'].width = 22
-    ws3.column_dimensions['H'].width = 24
-    ws3.column_dimensions['I'].width = 32
+    ws3.column_dimensions['H'].width = 32
 
     # ---------------- شیت خلاصه ----------------
     ws_sum = _new_sheet(wb, "جمع‌بندی", ["عنوان", "مقدار"])

@@ -59,6 +59,8 @@ class Task(Base):
     department = Column(String(10), default=DEPT_IT)
     # خدماتی مثل «ارتقا»، «اسمبل» و «نصب ویندوز» تک‌تک و با نام فرد ثبت می‌شوند
     requires_name = Column(Boolean, default=False)
+    # ترتیب نمایش (اولویت) بین هم‌ردیف‌ها؛ عدد کوچک‌تر بالاتر
+    position = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
 
     # اصلاح رابطه برای ساختار درختی (پدر-فرزندی)

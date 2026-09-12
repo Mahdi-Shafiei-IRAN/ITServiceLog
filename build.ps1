@@ -65,13 +65,19 @@ $piArgs = @(
 if ($addSeed) { $piArgs += @("--add-data", "assets\seed.sqlite;assets") }
 # نمونه‌ی پیکربندی سرور/دامنه را کنار برنامه می‌گذاریم (installer.iss هم آن را کپی می‌کند)
 if (Test-Path "$root\config.example.json") { $piArgs += @("--add-data", "config.example.json;.") }
-# اگر pyodbc در محیط build نصب باشد، اتصال به SQL Server هم داخل بسته قرار می‌گیرد
+# اگر psycopg2 در محیط build نصب باشد، اتصال به PostgreSQL داخل بسته قرار می‌گیرد
+& $Python -c "import psycopg2" 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "    psycopg2 found; PostgreSQL support will be bundled" -ForegroundColor DarkGray
+    $piArgs += @("--hidden-import", "psycopg2", "--hidden-import", "sqlalchemy.dialects.postgresql.psycopg2")
+} else {
+    Write-Host "    psycopg2 not installed in build env; PostgreSQL support NOT bundled" -ForegroundColor Yellow
+}
+# اگر pyodbc هم نصب باشد، اتصال به SQL Server نیز پشتیبانی می‌شود (اختیاری)
 & $Python -c "import pyodbc" 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "    pyodbc found; SQL Server support will be bundled" -ForegroundColor DarkGray
     $piArgs += @("--hidden-import", "pyodbc", "--hidden-import", "sqlalchemy.dialects.mssql.pyodbc")
-} else {
-    Write-Host "    pyodbc not installed in build env; SQL Server support NOT bundled" -ForegroundColor Yellow
 }
 $piArgs += "main.py"
 & $Python @piArgs
