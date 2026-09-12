@@ -1,8 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_submodules
 
-hiddenimports = ['psycopg2', 'sqlalchemy.dialects.postgresql.psycopg2',
-                 'pyodbc', 'sqlalchemy.dialects.mssql.pyodbc']
+hiddenimports = ['psycopg2', 'sqlalchemy.dialects.postgresql.psycopg2', 'pyodbc', 'sqlalchemy.dialects.mssql.pyodbc']
 hiddenimports += collect_submodules('sqlalchemy')
 
 
