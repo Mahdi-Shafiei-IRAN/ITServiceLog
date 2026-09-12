@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
     QFrame, QScrollArea, QSizePolicy
@@ -62,7 +62,7 @@ class DashboardPage(QWidget):
         main_layout.setSpacing(15)
 
         # Header
-        header = QLabel("داشبورد مدیریت و آمار مراجعات IT")
+        header = QLabel("داشبورد مدیریت و آمار خدمات")
         header.setObjectName("PageTitle")
         main_layout.addWidget(header)
 
@@ -70,9 +70,9 @@ class DashboardPage(QWidget):
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(15)
 
-        self.card_today = StatCard("مراجعات امروز", "0", "ثبت‌شده امروز", "#0284C7")
-        self.card_week = StatCard("مراجعات این هفته", "0", "۷ روز گذشته", "#0D9488")
-        self.card_month = StatCard("مراجعات این ماه", "0", "۳۰ روز گذشته", "#6366F1")
+        self.card_today = StatCard("خدمات امروز", "0", "مجموع تعداد خدمات امروز", "#0284C7")
+        self.card_week = StatCard("خدمات ۷ روز اخیر", "0", "۷ روز گذشته", "#0D9488")
+        self.card_month = StatCard("خدمات ۳۰ روز اخیر", "0", "۳۰ روز گذشته", "#6366F1")
         self.card_techs = StatCard("کارشناسان فعال", "0", "آماده ارائه خدمت", "#D97706")
 
         kpi_layout.addWidget(self.card_today)
@@ -115,30 +115,35 @@ class DashboardPage(QWidget):
         return container
 
     def refresh_dashboard(self):
-        now = datetime.now()
-        today_start = datetime(now.year, now.month, now.day)
-        week_start = now - timedelta(days=7)
-        month_start = now - timedelta(days=30)
+        today = date.today()
+        week_start = today - timedelta(days=6)
+        month_start = today - timedelta(days=29)
 
-        # Fetch Counts
-        count_today = self.db.query(ServiceRecord).filter(ServiceRecord.created_at >= today_start).count()
-        count_week = self.db.query(ServiceRecord).filter(ServiceRecord.created_at >= week_start).count()
-        count_month = self.db.query(ServiceRecord).filter(ServiceRecord.created_at >= month_start).count()
-        count_techs = self.db.query(Technician).filter_by(is_active=True).count()
+        # مجموع «تعداد» خدمات (نه تعداد برگه‌ها) در هر بازه
+        def service_count(since):
+            value = (
+                self.db.query(func.sum(ServiceRecordTask.quantity))
+                .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
+                .filter(ServiceRecord.report_date >= since)
+                .scalar()
+            )
+            return int(value or 0)
 
-        self.card_today.lbl_value.setText(str(count_today))
-        self.card_week.lbl_value.setText(str(count_week))
-        self.card_month.lbl_value.setText(str(count_month))
-        self.card_techs.lbl_value.setText(str(count_techs))
+        self.card_today.lbl_value.setText(str(service_count(today)))
+        self.card_week.lbl_value.setText(str(service_count(week_start)))
+        self.card_month.lbl_value.setText(str(service_count(month_start)))
+        self.card_techs.lbl_value.setText(
+            str(self.db.query(Technician).filter_by(is_active=True).count()))
 
         # Chart 1: Records grouped by Technician
         tech_data = (
             self.db.query(
-                ServiceRecord.technician_name_snapshot, 
-                func.count(ServiceRecord.id)
+                ServiceRecord.technician_name_snapshot,
+                func.sum(ServiceRecordTask.quantity)
             )
+            .join(ServiceRecordTask, ServiceRecord.id == ServiceRecordTask.service_record_id)
             .group_by(ServiceRecord.technician_name_snapshot)
-            .order_by(func.count(ServiceRecord.id).desc())
+            .order_by(func.sum(ServiceRecordTask.quantity).desc())
             .limit(6)
             .all()
         )
@@ -152,7 +157,7 @@ class DashboardPage(QWidget):
         ax1 = self.fig_tech.add_subplot(111)
         if tech_data:
             names = [d[0] or "نامشخص" for d in tech_data]
-            counts = [d[1] for d in tech_data]
+            counts = [int(d[1] or 0) for d in tech_data]
             bars = ax1.barh(names, counts, color=p["primary"], height=0.55)
             ax1.bar_label(bars, padding=4, fontsize=9, color=text_color)
             ax1.invert_yaxis()
@@ -166,11 +171,11 @@ class DashboardPage(QWidget):
         task_data = (
             self.db.query(
                 Task.title,
-                func.count(ServiceRecordTask.id)
+                func.sum(ServiceRecordTask.quantity)
             )
             .join(ServiceRecordTask, Task.id == ServiceRecordTask.task_id)
             .group_by(Task.title)
-            .order_by(func.count(ServiceRecordTask.id).desc())
+            .order_by(func.sum(ServiceRecordTask.quantity).desc())
             .limit(5)
             .all()
         )
@@ -181,7 +186,7 @@ class DashboardPage(QWidget):
         ax2.set_facecolor(surface)
         if task_data:
             titles = [t[0] for t in task_data]
-            counts = [t[1] for t in task_data]
+            counts = [int(t[1] or 0) for t in task_data]
             colors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"]
             ax2.pie(
                 counts,

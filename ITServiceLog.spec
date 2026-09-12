@@ -6,7 +6,9 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    # برای اجرای شبکه‌ای: اگر pyodbc در محیط build نصب باشد، داخل بسته قرار می‌گیرد.
+    # (اگر نصب نباشد PyInstaller فقط هشدار می‌دهد و برنامه روی SQLite کار می‌کند.)
+    hiddenimports=['pyodbc', 'sqlalchemy.dialects.mssql.pyodbc'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

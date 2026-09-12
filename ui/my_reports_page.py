@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, date
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QDate
 from sqlalchemy.orm import Session
-from database.models import ServiceRecord
+from database.models import ServiceRecord, DEPARTMENTS
 from reports.excel_exporter import export_records_to_excel
-from ui.record_edit_dialog import EditServiceRecordDialog, delete_service_record
+from reports import summary
+from ui.record_edit_dialog import EditServiceRecordDialog
 
 
 def week_start(d):
@@ -19,56 +20,66 @@ def week_start(d):
 
 
 class RecordDetailDialog(QDialog):
-    """Modern popup window to view the complete details of a single record."""
+    """پنجره‌ی نمایش جزئیات کامل یک برگه‌ی روزانه."""
+
     def __init__(self, record: ServiceRecord, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("جزئیات گزارش مراجعه")
-        self.setFixedSize(480, 520)
+        self.setWindowTitle("جزئیات گزارش روزانه")
+        self.setMinimumSize(520, 560)
         self.setLayoutDirection(Qt.RightToLeft)
-        
+
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        title = QLabel(f"گزارش شماره #{record.id}")
+        title = QLabel(f"گزارش روزانه #{record.id}")
         title.setObjectName("SectionTitle")
         layout.addWidget(title)
 
-        # Details Box
         info_frame = QFrame()
         info_frame.setObjectName("Card")
         info_layout = QVBoxLayout(info_frame)
         info_layout.setContentsMargins(12, 10, 12, 10)
-        
-        info_layout.addWidget(QLabel(f"<b>مراجعه‌کننده:</b> {record.requester_name_snapshot} (داخلی: {record.requester_extension_snapshot})"))
-        info_layout.addWidget(QLabel(f"<b>سیستم / دارایی:</b> {record.system_name_snapshot or 'ثبت نشده'}"))
-        info_layout.addWidget(QLabel(f"<b>کارشناس رسیدگی‌کننده:</b> {record.technician_name_snapshot}"))
-        info_layout.addWidget(QLabel(f"<b>زمان ثبت:</b> {record.created_at.strftime('%Y/%m/%d - %H:%M')}"))
+        info_layout.addWidget(QLabel(f"<b>تاریخ:</b> {summary.date_text(record)}"))
+        info_layout.addWidget(QLabel(f"<b>بخش:</b> {summary.dept_label(record)}"))
+        info_layout.addWidget(QLabel(f"<b>کارشناس:</b> {record.technician_name_snapshot or '-'}"))
+        info_layout.addWidget(QLabel(f"<b>مجموع خدمات:</b> {summary.total_count(record)}"))
         layout.addWidget(info_frame)
 
-        # Selected Tasks list
-        layout.addWidget(QLabel("<b>عملیات انجام‌شده:</b>"))
-        tasks_text = QTextEdit()
-        tasks_text.setReadOnly(True)
-        task_names = [f"• {st.task.title}" for st in record.tasks if st.task]
-        tasks_text.setPlainText("\n".join(task_names) if task_names else "موردی ثبت نشده است.")
-        layout.addWidget(tasks_text)
+        layout.addWidget(QLabel("<b>خدمات کلی روز (با تعداد):</b>"))
+        counted = QTextEdit()
+        counted.setReadOnly(True)
+        lines = [f"• {l.task.title if l.task else '؟'} — تعداد: {l.quantity or 1}"
+                 for l in summary.counted_lines(record)]
+        counted.setPlainText("\n".join(lines) if lines else "موردی ثبت نشده است.")
+        layout.addWidget(counted)
 
-        # Short Note
-        layout.addWidget(QLabel("<b>توضیح کوتاه:</b>"))
+        layout.addWidget(QLabel("<b>خدمات نام‌دار:</b>"))
+        named = QTextEdit()
+        named.setReadOnly(True)
+        nlines = []
+        for l in summary.named_lines(record):
+            extras = " | ".join(x for x in [
+                f"داخلی: {l.person_extension}" if l.person_extension else "",
+                f"سیستم: {l.system_name}" if l.system_name else "",
+                l.note or "",
+            ] if x)
+            nlines.append(f"• {l.task.title if l.task else '؟'} — {l.person_name}"
+                          + (f"  ({extras})" if extras else ""))
+        named.setPlainText("\n".join(nlines) if nlines else "موردی ثبت نشده است.")
+        layout.addWidget(named)
+
+        layout.addWidget(QLabel("<b>توضیح روز:</b>"))
         note_text = QTextEdit()
         note_text.setReadOnly(True)
         note_text.setPlainText(record.short_description or "بدون توضیح.")
-        note_text.setMaximumHeight(80)
+        note_text.setMaximumHeight(70)
         layout.addWidget(note_text)
 
-        # Close button
         btn_close = QPushButton("بستن")
         btn_close.setCursor(Qt.PointingHandCursor)
         btn_close.clicked.connect(self.accept)
         layout.addWidget(btn_close)
-
-
 
 
 class MyReportsPage(QWidget):
@@ -76,8 +87,8 @@ class MyReportsPage(QWidget):
         super().__init__()
         self.db = db_session
         self.technician = current_technician
-        self.records = []       # همه‌ی رکوردهای کارشناس
-        self.displayed = []     # رکوردهای در حال نمایش (پس از فیلتر)
+        self.records = []       # همه‌ی برگه‌های کارشناس
+        self.displayed = []     # برگه‌های در حال نمایش (پس از فیلتر)
         self.setup_ui()
         self.load_records()
 
@@ -88,13 +99,13 @@ class MyReportsPage(QWidget):
 
         # ---------------- ردیف اول: عنوان و جستجو ----------------
         top_bar = QHBoxLayout()
-        title = QLabel("گزارش‌های ثبت‌شده توسط من")
+        title = QLabel("گزارش‌های روزانه‌ی ثبت‌شده توسط من")
         title.setObjectName("PageTitle")
         top_bar.addWidget(title)
         top_bar.addStretch()
 
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("جستجو در مراجعین، سیستم، کار یا توضیحات...")
+        self.txt_search.setPlaceholderText("جستجو در خدمات، نام افراد، سیستم یا توضیحات...")
         self.txt_search.setFixedWidth(300)
         self.txt_search.textChanged.connect(self.filter_records)
         top_bar.addWidget(self.txt_search)
@@ -107,7 +118,7 @@ class MyReportsPage(QWidget):
 
         layout.addLayout(top_bar)
 
-        # ---------------- ردیف دوم: بازه‌ی زمانی ----------------
+        # ---------------- ردیف دوم: بازه‌ی زمانی و بخش ----------------
         date_bar = QHBoxLayout()
         self.cmb_period = QComboBox()
         for label, key in [
@@ -124,6 +135,12 @@ class MyReportsPage(QWidget):
         ]:
             self.cmb_period.addItem(label, key)
         self.cmb_period.currentIndexChanged.connect(self._period_changed)
+
+        self.cmb_dept = QComboBox()
+        self.cmb_dept.addItem("همه‌ی بخش‌ها", None)
+        for key, label in DEPARTMENTS:
+            self.cmb_dept.addItem(label, key)
+        self.cmb_dept.currentIndexChanged.connect(self.filter_records)
 
         self.date_from = QDateEdit()
         self.date_from.setCalendarPopup(True)
@@ -145,6 +162,9 @@ class MyReportsPage(QWidget):
         date_bar.addWidget(self.date_from)
         date_bar.addWidget(QLabel("تا:"))
         date_bar.addWidget(self.date_to)
+        date_bar.addSpacing(16)
+        date_bar.addWidget(QLabel("بخش:"))
+        date_bar.addWidget(self.cmb_dept)
         date_bar.addStretch()
         layout.addLayout(date_bar)
 
@@ -181,10 +201,9 @@ class MyReportsPage(QWidget):
 
         # ---------------- جدول ----------------
         self.table = QTableWidget()
-        self.table.setColumnCount(9)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels([
-            "انتخاب", "ردیف", "کد رهگیری", "تاریخ", "ساعت",
-            "مراجعه‌کننده", "داخلی", "سیستم", "عملیات انجام‌شده"
+            "انتخاب", "ردیف", "کد رهگیری", "تاریخ", "بخش", "مجموع خدمات", "شرح خدمات روز"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -193,10 +212,9 @@ class MyReportsPage(QWidget):
         self.table.doubleClicked.connect(self.show_record_details)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for i in range(1, 8):
+        for i in range(0, 6):
             header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(8, QHeaderView.Stretch)
+        header.setSectionResizeMode(6, QHeaderView.Stretch)
 
         layout.addWidget(self.table, stretch=1)
 
@@ -212,13 +230,13 @@ class MyReportsPage(QWidget):
             .order_by(ServiceRecord.created_at.desc())
             .all()
         )
+        self.records.sort(key=lambda r: summary.record_date(r) or date.min, reverse=True)
         self.filter_records()
 
     def show_record_details(self, index):
         row = index.row()
         if 0 <= row < len(self.displayed):
-            dialog = RecordDetailDialog(self.displayed[row], self)
-            dialog.exec()
+            RecordDetailDialog(self.displayed[row], self).exec()
 
     # ---------------- بازه‌ی زمانی ----------------
     def _period_changed(self):
@@ -256,27 +274,25 @@ class MyReportsPage(QWidget):
             end = self.date_to.date().toPython()
         else:
             return None
-        return (datetime.combine(start, time.min), datetime.combine(end, time.max))
+        return (start, end)
 
     # ---------------- فیلتر ----------------
     def filter_records(self, *_):
         query = self.txt_search.text().strip().lower()
         search_words = query.split() if query else []
         rng = self._date_range()
+        dept = self.cmb_dept.currentData()
 
         filtered = []
         for rec in self.records:
-            if rng and rec.created_at is not None:
-                if not (rng[0] <= rec.created_at <= rng[1]):
-                    continue
+            if dept and (rec.department or "IT") != dept:
+                continue
+            day = summary.record_date(rec)
+            if rng and day is not None and not (rng[0] <= day <= rng[1]):
+                continue
             if search_words:
-                tasks_str = " ".join([t.task.title for t in rec.tasks if t.task]).lower()
-                searchable_text = (
-                    f"{rec.id} {rec.requester_name_snapshot or ''} "
-                    f"{rec.requester_extension_snapshot or ''} {rec.system_name_snapshot or ''} "
-                    f"{rec.short_description or ''} {tasks_str}"
-                ).lower()
-                if not all(word in searchable_text for word in search_words):
+                text = summary.searchable_text(rec)
+                if not all(word in text for word in search_words):
                     continue
             filtered.append(rec)
 
@@ -290,8 +306,6 @@ class MyReportsPage(QWidget):
 
         self.table.setRowCount(len(records))
         for row, rec in enumerate(records):
-            tasks_preview = " | ".join([t.task.title for t in rec.tasks if t.task]) or "-"
-
             chk = QTableWidgetItem()
             chk.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             chk.setCheckState(Qt.Unchecked)
@@ -301,19 +315,19 @@ class MyReportsPage(QWidget):
             values = [
                 str(row + 1),
                 f"#{rec.id}",
-                rec.created_at.strftime("%Y/%m/%d"),
-                rec.created_at.strftime("%H:%M"),
-                rec.requester_name_snapshot or "-",
-                rec.requester_extension_snapshot or "-",
-                rec.system_name_snapshot or "-",
-                tasks_preview,
+                summary.date_text(rec),
+                summary.dept_label(rec),
+                str(summary.total_count(rec)),
+                summary.summary_text(rec),
             ]
             for col, val in enumerate(values, start=1):
                 item = QTableWidgetItem(val)
-                item.setTextAlignment(Qt.AlignCenter if col < 8 else Qt.AlignLeft | Qt.AlignVCenter)
+                item.setTextAlignment(Qt.AlignCenter if col < 6 else Qt.AlignLeft | Qt.AlignVCenter)
                 self.table.setItem(row, col, item)
 
-        self.lbl_status.setText(f"نمایش {len(records)} گزارش | دابل‌کلیک روی ردیف برای جزئیات.")
+        total = sum(summary.total_count(r) for r in records)
+        self.lbl_status.setText(
+            f"نمایش {len(records)} روز | مجموع خدمات: {total} | دابل‌کلیک روی ردیف برای جزئیات.")
 
     # ---------------- انتخاب ----------------
     def _toggle_select_all(self, state):
@@ -343,9 +357,8 @@ class MyReportsPage(QWidget):
         record = self._selected_record()
         if not record:
             return
-        dialog = EditServiceRecordDialog(self.db, record, self)
-        if dialog.exec() == QDialog.Accepted:
-            self.load_records()
+        EditServiceRecordDialog(self.db, record, self).exec()
+        self.load_records()
 
     def delete_checked(self):
         targets = self._checked_records()
@@ -360,8 +373,8 @@ class MyReportsPage(QWidget):
         if confirm != QMessageBox.Yes:
             return
         for rec in targets:
-            for st in list(rec.tasks):
-                self.db.delete(st)
+            for line in list(rec.tasks):
+                self.db.delete(line)
             self.db.delete(rec)
         self.db.commit()
         QMessageBox.information(self, "موفق", f"{len(targets)} گزارش حذف شد.")

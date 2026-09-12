@@ -4,3 +4,8 @@ openpyxl>=3.1.2
 matplotlib>=3.8.0
 bcrypt>=4.1.2
 pandas>=2.2.0
+
+# --- اختیاری: فقط برای اجرای شبکه‌ای روی سرور ---
+# pyodbc>=5.1.0        # اتصال به SQL Server (به همراه ODBC Driver 17/18)
+# psycopg2-binary>=2.9 # اتصال به PostgreSQL
+# ldap3>=2.9           # ورود با اکتیودایرکتوری روی سیستم‌های غیرویندوزی

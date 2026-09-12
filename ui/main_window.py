@@ -2,13 +2,14 @@ from PySide6.QtWidgets import (QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout
                                QWidget, QPushButton)
 from PySide6.QtCore import Qt
 from database.connection import SessionLocal
-from ui.service_record_page import ServiceRecordPage
+from ui.daily_entry_page import DailyEntryPage
 from ui.my_reports_page import MyReportsPage
 from ui.dashboard_page import DashboardPage
 from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
 from ui.theme import set_variant, make_theme_toggle
+from database.models import DEPT_LABELS
 
 class MainWindow(QMainWindow):
     def __init__(self, current_technician):
@@ -47,9 +48,12 @@ class MainWindow(QMainWindow):
 
         self.tabs.setCornerWidget(corner, Qt.TopLeftCorner)  # گوشه چپ (چون راست‌چین است)
         
-        # --- تب‌های مشترک ---
-        self.tab_new_record = ServiceRecordPage(self.db_session, self.technician)
-        self.tabs.addTab(self.tab_new_record, "ثبت مراجعه جدید")
+        # --- یک تب ثبت روزانه برای هر بخشی که کاربر به آن دسترسی دارد ---
+        self.entry_tabs = {}
+        for dept in self.technician.departments():
+            page = DailyEntryPage(self.db_session, self.technician, dept)
+            self.entry_tabs[dept] = page
+            self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
         
         self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
         self.tabs.addTab(self.tab_my_reports, "گزارش‌های من")

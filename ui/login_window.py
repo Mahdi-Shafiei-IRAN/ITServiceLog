@@ -2,7 +2,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QMessageBox)
 from PySide6.QtCore import Qt
 from database.connection import SessionLocal
-from database.models import Technician
+from services.auth_service import authenticate, AuthError, ad_enabled
 from ui.theme import make_theme_toggle
 
 class LoginWindow(QDialog):
@@ -29,7 +29,10 @@ class LoginWindow(QDialog):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
-        subtitle = QLabel("برای ورود، نام کاربری و رمز عبور خود را وارد کنید")
+        hint = ("برای ورود از نام کاربری و رمز ویندوز (دامنه) خود استفاده کنید"
+                if ad_enabled() else
+                "برای ورود، نام کاربری و رمز عبور خود را وارد کنید")
+        subtitle = QLabel(hint)
         subtitle.setObjectName("Muted")
         subtitle.setAlignment(Qt.AlignCenter)
         layout.addWidget(subtitle)
@@ -63,10 +66,11 @@ class LoginWindow(QDialog):
         password = self.txt_password.text()
 
         with SessionLocal() as db:
-            user = db.query(Technician).filter_by(username=username).first()
-            # در نسخه نهایی باید از bcrypt.checkpw استفاده شود
-            if user and user.password_hash == password:
-                self.authenticated_user = user
-                self.accept()
-            else:
-                QMessageBox.warning(self, "خطا", "نام کاربری یا رمز عبور اشتباه است.")
+            try:
+                user = authenticate(db, username, password)
+            except AuthError as exc:
+                QMessageBox.warning(self, "خطا", str(exc))
+                return
+            db.expunge(user)
+            self.authenticated_user = user
+            self.accept()

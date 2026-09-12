@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QComboBox, QMessageBox, QAbstractItemView)
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
-from database.models import Technician
+from database.models import Technician, DEPARTMENTS
 
 class TechniciansPage(QWidget):
     def __init__(self, db_session: Session, current_technician=None):
@@ -46,6 +46,12 @@ class TechniciansPage(QWidget):
         self.cmb_role = QComboBox()
         self.cmb_role.addItems(["Technician", "Administrator"])
 
+        # بخش کاری: تعیین می‌کند کاربر کدام صفحه‌ی ثبت روزانه را ببیند
+        self.cmb_dept = QComboBox()
+        for key, label in DEPARTMENTS:
+            self.cmb_dept.addItem(label, key)
+        self.cmb_dept.addItem("هر دو بخش", "BOTH")
+
         btn_add = QPushButton("ثبت / ذخیره")
         btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.save_technician)
@@ -65,6 +71,7 @@ class TechniciansPage(QWidget):
         form_layout.addWidget(self.txt_user)
         form_layout.addWidget(self.txt_pass)
         form_layout.addWidget(self.cmb_role)
+        form_layout.addWidget(self.cmb_dept)
         form_layout.addWidget(btn_add)
         form_layout.addWidget(btn_new)
         form_layout.addWidget(btn_delete)
@@ -72,8 +79,9 @@ class TechniciansPage(QWidget):
 
         # جدول نمایش کارشناسان
         self.table = QTableWidget()
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["شناسه", "نام", "داخلی", "نام کاربری", "نقش (Role)"])
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(
+            ["شناسه", "نام", "داخلی", "نام کاربری", "نقش (Role)", "بخش"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -94,6 +102,8 @@ class TechniciansPage(QWidget):
             self.table.setItem(row, 2, QTableWidgetItem(t.internal_extension or "-"))
             self.table.setItem(row, 3, QTableWidgetItem(t.username))
             self.table.setItem(row, 4, QTableWidgetItem("مدیر" if t.role == "Administrator" else "کارشناس"))
+            dept_label = {"BOTH": "هر دو بخش"}.get(t.department) or dict(DEPARTMENTS).get(t.department, "واحد IT")
+            self.table.setItem(row, 5, QTableWidgetItem(dept_label))
 
     def _selected_row(self):
         sel = self.table.selectionModel().selectedRows()
@@ -114,6 +124,8 @@ class TechniciansPage(QWidget):
         self.txt_pass.clear()
         self.txt_pass.setPlaceholderText("برای حفظ رمز فعلی خالی بگذارید...")
         self.cmb_role.setCurrentText(t.role)
+        idx = self.cmb_dept.findData(t.department or "IT")
+        self.cmb_dept.setCurrentIndex(idx if idx >= 0 else 0)
         self.lbl_mode.setText(f"حالت: ویرایش کارشناس «{t.full_name}» (#{t.id})")
 
     def clear_form(self):
@@ -123,6 +135,7 @@ class TechniciansPage(QWidget):
         self.txt_user.clear(); self.txt_pass.clear()
         self.txt_pass.setPlaceholderText("رمز عبور...")
         self.cmb_role.setCurrentIndex(0)
+        self.cmb_dept.setCurrentIndex(0)
         self.table.clearSelection()
         self.lbl_mode.setText("حالت: افزودن کارشناس جدید")
 
@@ -131,6 +144,7 @@ class TechniciansPage(QWidget):
         user = self.txt_user.text().strip()
         pwd = self.txt_pass.text().strip()
         role = self.cmb_role.currentText()
+        dept = self.cmb_dept.currentData()
         ext = self.txt_ext.text().strip()
 
         if not name or not user:
@@ -150,6 +164,7 @@ class TechniciansPage(QWidget):
             tech.internal_extension = ext
             tech.username = user
             tech.role = role
+            tech.department = dept
             if pwd:  # فقط اگر رمز جدید وارد شده باشد
                 tech.password_hash = pwd
             self.db.commit()
@@ -163,7 +178,8 @@ class TechniciansPage(QWidget):
                 internal_extension=ext,
                 username=user,
                 password_hash=pwd,  # در سیستم‌های بزرگ‌تر باید هش شود
-                role=role
+                role=role,
+                department=dept,
             )
             self.db.add(new_tech)
             self.db.commit()

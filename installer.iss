@@ -43,6 +43,10 @@ Name: "desktopicon"; Description: "ایجاد میانبر روی دسکتاپ";
 Source: "dist\ITServiceLog\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; آیکون برنامه کنار فایل اجرایی تا شورتکات‌ها همیشه لوگو را نشان دهند
 Source: "assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
+; نمونه‌ی پیکربندی اتصال به سرور/دامنه. برای اجرای شبکه‌ای، این فایل را کنار
+; فایل اجرایی به config.json تغییر نام دهید و مقادیر را تنظیم کنید.
+; فایل config.json موجود هرگز توسط نصب‌کننده بازنویسی نمی‌شود.
+Source: "config.example.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\app.ico"
