@@ -175,44 +175,53 @@ QSpinBox, QDoubleSpinBox {
     color: %(text)s;
     border: 1px solid %(border)s;
     border-radius: 8px;
-    padding: 4px 10px;
-    min-height: 26px;
-    font-size: 15px;
+    padding-right: 12px;      /* جای عدد در سمت راست */
+    min-height: 34px;
+    font-size: 16px;
     font-weight: bold;
 }
 QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid %(primary)s; }
 QSpinBox:hover, QDoubleSpinBox:hover { border: 1px solid %(border_strong)s; }
+
+/* دکمه‌های بالا/پایین سمت چپ، بزرگ و کاملاً کلیک‌پذیر */
 QSpinBox::up-button, QDoubleSpinBox::up-button {
     subcontrol-origin: border;
     subcontrol-position: top left;
-    width: 26px;
+    width: 30px;
+    height: 16px;
     border-right: 1px solid %(border)s;
+    border-bottom: 1px solid %(border)s;
     border-top-left-radius: 8px;
-    background-color: %(surface_alt)s;
+    background-color: %(surface_muted)s;
 }
 QSpinBox::down-button, QDoubleSpinBox::down-button {
     subcontrol-origin: border;
     subcontrol-position: bottom left;
-    width: 26px;
+    width: 30px;
+    height: 16px;
     border-right: 1px solid %(border)s;
     border-bottom-left-radius: 8px;
-    background-color: %(surface_alt)s;
+    background-color: %(surface_muted)s;
 }
 QSpinBox::up-button:hover, QSpinBox::down-button:hover,
 QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
     background-color: %(primary)s;
 }
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed,
+QDoubleSpinBox::up-button:pressed, QDoubleSpinBox::down-button:pressed {
+    background-color: %(primary_press)s;
+}
 QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
     width: 0; height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-bottom: 7px solid %(text)s;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-bottom: 8px solid %(text_muted)s;
 }
 QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
     width: 0; height: 0;
-    border-left: 5px solid transparent;
-    border-right: 5px solid transparent;
-    border-top: 7px solid %(text)s;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 8px solid %(text_muted)s;
 }
 QComboBox QAbstractItemView {
     background-color: %(surface)s;

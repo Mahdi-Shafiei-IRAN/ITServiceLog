@@ -10,7 +10,7 @@
 from datetime import date
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QTreeWidget, QTreeWidgetItem, QSpinBox,
+                               QPushButton, QTreeWidget, QTreeWidgetItem,
                                QTextEdit, QMessageBox, QGroupBox, QDateEdit, QTableWidget,
                                QTableWidgetItem, QComboBox, QHeaderView, QSplitter,
                                QAbstractItemView, QCompleter)
@@ -18,7 +18,8 @@ from PySide6.QtCore import Qt, QDate
 from sqlalchemy.orm import Session
 
 from database.models import (Task, ServiceRecord, ServiceRecordTask, Employee,
-                             DEPT_IT, DEPT_LABELS)
+                             DEPT_IT, DEPT_SITE, DEPT_LABELS)
+from ui.widgets import NoWheelSpinBox
 
 NAMED_COLUMNS = ["خدمت", "نام فرد", "داخلی", "توضیح"]
 
@@ -29,8 +30,11 @@ class DailyEntryPage(QWidget):
         self.db = db_session
         self.technician = current_technician
         self.department = department
+        # واحد سایت مثل قبل تیکی است؛ تعداد کنارش اختیاری است. واحد IT فقط تعدادی است.
+        self.use_checkboxes = (department == DEPT_SITE)
         self.record = None            # برگه‌ی روزانه‌ی در حال ویرایش
         self.count_widgets = {}       # task_id -> QSpinBox
+        self.task_items = {}          # task_id -> QTreeWidgetItem (برای تیک‌ها)
         self.named_tasks = []         # [(id, title)]
         self.setup_ui()
         self.load_data()
@@ -70,8 +74,12 @@ class DailyEntryPage(QWidget):
 
         splitter = QSplitter(Qt.Horizontal)
 
-        # ------- خدمات کلی (فقط تعداد) -------
-        general_group = QGroupBox("خدمات کلی روز (فقط تعداد — بدون نیاز به نام)")
+        # ------- خدمات کلی -------
+        if self.use_checkboxes:
+            general_title = "خدمات انجام‌شده‌ی این روز (تیک بزنید — تعداد اختیاری است)"
+        else:
+            general_title = "خدمات کلی روز (فقط تعداد — بدون نیاز به نام)"
+        general_group = QGroupBox(general_title)
         general_layout = QVBoxLayout()
 
         self.txt_task_search = QLineEdit()
@@ -82,11 +90,12 @@ class DailyEntryPage(QWidget):
 
         self.task_tree = QTreeWidget()
         self.task_tree.setColumnCount(2)
-        self.task_tree.setHeaderLabels(["خدمت", "تعداد"])
+        count_header = "تعداد (اختیاری)" if self.use_checkboxes else "تعداد"
+        self.task_tree.setHeaderLabels(["خدمت", count_header])
         self.task_tree.setColumnWidth(0, 340)
         self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
         self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.task_tree.setColumnWidth(1, 110)
+        self.task_tree.setColumnWidth(1, 118)
         general_layout.addWidget(self.task_tree)
 
         btn_clear_counts = QPushButton("صفر کردن همه‌ی تعدادها")
@@ -190,6 +199,7 @@ class DailyEntryPage(QWidget):
     def _build_task_tree(self):
         self.task_tree.clear()
         self.count_widgets = {}
+        self.task_items = {}
         self.named_tasks = []
 
         roots = [t for t in self._active_tasks() if t.parent_task_id is None]
@@ -215,16 +225,21 @@ class DailyEntryPage(QWidget):
             self._add_branch(item, sub)
 
     def _attach_spin(self, item, task):
-        spin = QSpinBox()
+        # در واحد سایت هر مورد یک تیک هم دارد (مثل قبل)
+        if self.use_checkboxes:
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(0, Qt.Unchecked)
+
+        spin = NoWheelSpinBox()
         spin.setRange(0, 999)
         spin.setValue(0)
         spin.setAlignment(Qt.AlignCenter)
-        spin.setMinimumHeight(34)
-        spin.setButtonSymbols(QSpinBox.UpDownArrows)
+        spin.setFixedSize(104, 34)
         self.task_tree.setItemWidget(item, 1, spin)
         # ارتفاع ردیف را به‌اندازه‌ی اسپین‌باکس بزرگ می‌کنیم تا محتوا بریده نشود
         item.setSizeHint(1, spin.sizeHint())
         self.count_widgets[task.id] = spin
+        self.task_items[task.id] = item
 
     def _refresh_named_task_list(self):
         # ترتیب بر اساس اولویت (position) که از _active_tasks می‌آید
@@ -281,14 +296,24 @@ class DailyEntryPage(QWidget):
             if line.person_name:
                 self.add_named_row(task_id=line.task_id, name=line.person_name,
                                    ext=line.person_extension, note=line.note)
-            else:
-                spin = self.count_widgets.get(line.task_id)
+                continue
+            spin = self.count_widgets.get(line.task_id)
+            item = self.task_items.get(line.task_id)
+            qty = line.quantity or 1
+            if self.use_checkboxes and item is not None:
+                item.setCheckState(0, Qt.Checked)
+                # عدد فقط وقتی بیشتر از ۱ باشد نشان داده می‌شود؛ در غیر این صورت خالی می‌ماند
                 if spin:
-                    spin.setValue(line.quantity or 1)
+                    spin.setValue(qty if qty > 1 else 0)
+            elif spin:
+                spin.setValue(qty)
 
     def _clear_counts(self):
         for spin in self.count_widgets.values():
             spin.setValue(0)
+        for item in self.task_items.values():
+            if item.flags() & Qt.ItemIsUserCheckable:
+                item.setCheckState(0, Qt.Unchecked)
 
     # ------------------------------------------------------ جدول نام‌دارها
     def add_named_row(self, task_id=None, name="", ext="", note=""):
@@ -361,10 +386,28 @@ class DailyEntryPage(QWidget):
         for i in range(self.task_tree.topLevelItemCount()):
             apply(self.task_tree.topLevelItem(i))
 
+    def _collect_counts(self):
+        """{task_id: quantity} برای خطوط شمارشی.
+
+        واحد سایت: هر موردِ تیک‌خورده حساب می‌شود (تعداد اگر خالی باشد = ۱).
+        واحد IT: هر موردی که تعدادش بیشتر از صفر باشد.
+        """
+        counts = {}
+        for tid, spin in self.count_widgets.items():
+            val = spin.value()
+            if self.use_checkboxes:
+                item = self.task_items.get(tid)
+                checked = item is not None and item.checkState(0) == Qt.Checked
+                if checked or val > 0:
+                    counts[tid] = val if val > 0 else 1
+            elif val > 0:
+                counts[tid] = val
+        return counts
+
     # --------------------------------------------------------------- ذخیره
     def save_record(self):
         day = self.selected_date()
-        counts = {tid: spin.value() for tid, spin in self.count_widgets.items() if spin.value() > 0}
+        counts = self._collect_counts()
         named = self._named_rows()
 
         for item in named:
