@@ -169,6 +169,44 @@ QLineEdit::placeholder { color: %(text_muted)s; }
 
 QComboBox::drop-down { border: none; width: 22px; }
 
+/* ---------- شمارنده‌ی تعداد (CountStepper) ---------- */
+QLineEdit#StepperEdit {
+    border: 1px solid %(border)s;
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    min-height: 34px;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0 6px;
+}
+QLineEdit#StepperEdit:focus { border: 1px solid %(primary)s; }
+QToolButton#StepUp, QToolButton#StepDown {
+    background-color: %(surface_muted)s;
+    color: %(text)s;
+    border: 1px solid %(border)s;
+    width: 30px;
+    min-height: 17px;
+    max-height: 17px;
+    font-size: 11px;
+}
+QToolButton#StepUp {
+    border-top-left-radius: 8px;
+    border-bottom: none;
+}
+QToolButton#StepDown {
+    border-bottom-left-radius: 8px;
+}
+QToolButton#StepUp:hover, QToolButton#StepDown:hover {
+    background-color: %(primary)s;
+    color: %(on_primary)s;
+}
+QToolButton#StepUp:pressed, QToolButton#StepDown:pressed {
+    background-color: %(primary_press)s;
+    color: %(on_primary)s;
+}
+
 /* ---------- اسپین‌باکس (شمارنده‌ی تعداد) ---------- */
 QSpinBox, QDoubleSpinBox {
     background-color: %(input_bg)s;

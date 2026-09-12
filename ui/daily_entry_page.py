@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from database.models import (Task, ServiceRecord, ServiceRecordTask, Employee,
                              DEPT_IT, DEPT_SITE, DEPT_LABELS)
-from ui.widgets import NoWheelSpinBox
+from ui.widgets import CountStepper
 
 NAMED_COLUMNS = ["خدمت", "نام فرد", "داخلی", "توضیح"]
 
@@ -72,8 +72,6 @@ class DailyEntryPage(QWidget):
         self.lbl_state.setObjectName("Muted")
         layout.addWidget(self.lbl_state)
 
-        splitter = QSplitter(Qt.Horizontal)
-
         # ------- خدمات کلی -------
         if self.use_checkboxes:
             general_title = "خدمات انجام‌شده‌ی این روز (تیک بزنید — تعداد اختیاری است)"
@@ -98,59 +96,68 @@ class DailyEntryPage(QWidget):
         self.task_tree.setColumnWidth(1, 118)
         general_layout.addWidget(self.task_tree)
 
-        btn_clear_counts = QPushButton("صفر کردن همه‌ی تعدادها")
+        clear_label = "پاک کردن انتخاب‌ها و تعدادها" if self.use_checkboxes else "صفر کردن همه‌ی تعدادها"
+        btn_clear_counts = QPushButton(clear_label)
         btn_clear_counts.setProperty("variant", "ghost")
         btn_clear_counts.setCursor(Qt.PointingHandCursor)
         btn_clear_counts.clicked.connect(self._clear_counts)
         general_layout.addWidget(btn_clear_counts)
 
         general_group.setLayout(general_layout)
-        splitter.addWidget(general_group)
 
-        # ------- خدمات نام‌دار (تک‌تک) -------
-        named_group = QGroupBox("خدمات نیازمند نام (ارتقا / اسمبل / نصب ویندوز و ...)")
-        named_layout = QVBoxLayout()
+        # واحد سایت فقط همین یک بخشِ تیکی را دارد؛ خدمات نام‌دار مخصوص واحد IT است.
+        if self.use_checkboxes:
+            self.named_table = None
+            self.lbl_named_hint = None
+            layout.addWidget(general_group, stretch=1)
+        else:
+            splitter = QSplitter(Qt.Horizontal)
+            splitter.addWidget(general_group)
 
-        named_bar = QHBoxLayout()
-        btn_add_row = QPushButton("+ افزودن مورد")
-        btn_add_row.setCursor(Qt.PointingHandCursor)
-        btn_add_row.clicked.connect(lambda: self.add_named_row())
+            # ------- خدمات نام‌دار (تک‌تک) -------
+            named_group = QGroupBox("خدمات نیازمند نام (ارتقا / اسمبل / نصب ویندوز و ...)")
+            named_layout = QVBoxLayout()
 
-        btn_del_row = QPushButton("حذف ردیف انتخاب‌شده")
-        btn_del_row.setProperty("variant", "danger")
-        btn_del_row.setCursor(Qt.PointingHandCursor)
-        btn_del_row.clicked.connect(self.remove_named_row)
+            named_bar = QHBoxLayout()
+            btn_add_row = QPushButton("+ افزودن مورد")
+            btn_add_row.setCursor(Qt.PointingHandCursor)
+            btn_add_row.clicked.connect(lambda: self.add_named_row())
 
-        named_bar.addWidget(btn_add_row)
-        named_bar.addWidget(btn_del_row)
-        named_bar.addStretch()
-        named_layout.addLayout(named_bar)
+            btn_del_row = QPushButton("حذف ردیف انتخاب‌شده")
+            btn_del_row.setProperty("variant", "danger")
+            btn_del_row.setCursor(Qt.PointingHandCursor)
+            btn_del_row.clicked.connect(self.remove_named_row)
 
-        self.named_table = QTableWidget()
-        self.named_table.setColumnCount(len(NAMED_COLUMNS))
-        self.named_table.setHorizontalHeaderLabels(NAMED_COLUMNS)
-        self.named_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.named_table.verticalHeader().setVisible(False)
-        # ارتفاع ردیف‌ها را بالا می‌بریم تا کمبو/ورودی‌ها بریده نشوند و متن دیده شود
-        self.named_table.verticalHeader().setDefaultSectionSize(44)
-        header = self.named_table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # خدمت
-        header.setSectionResizeMode(1, QHeaderView.Stretch)           # نام فرد
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # داخلی
-        header.setSectionResizeMode(3, QHeaderView.Stretch)           # توضیح
-        named_layout.addWidget(self.named_table)
+            named_bar.addWidget(btn_add_row)
+            named_bar.addWidget(btn_del_row)
+            named_bar.addStretch()
+            named_layout.addLayout(named_bar)
 
-        self.lbl_named_hint = QLabel("")
-        self.lbl_named_hint.setObjectName("Muted")
-        self.lbl_named_hint.setWordWrap(True)
-        named_layout.addWidget(self.lbl_named_hint)
+            self.named_table = QTableWidget()
+            self.named_table.setColumnCount(len(NAMED_COLUMNS))
+            self.named_table.setHorizontalHeaderLabels(NAMED_COLUMNS)
+            self.named_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            self.named_table.verticalHeader().setVisible(False)
+            # ارتفاع ردیف‌ها را بالا می‌بریم تا کمبو/ورودی‌ها بریده نشوند و متن دیده شود
+            self.named_table.verticalHeader().setDefaultSectionSize(44)
+            header = self.named_table.horizontalHeader()
+            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # خدمت
+            header.setSectionResizeMode(1, QHeaderView.Stretch)           # نام فرد
+            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # داخلی
+            header.setSectionResizeMode(3, QHeaderView.Stretch)           # توضیح
+            named_layout.addWidget(self.named_table)
 
-        named_group.setLayout(named_layout)
-        splitter.addWidget(named_group)
+            self.lbl_named_hint = QLabel("")
+            self.lbl_named_hint.setObjectName("Muted")
+            self.lbl_named_hint.setWordWrap(True)
+            named_layout.addWidget(self.lbl_named_hint)
 
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, stretch=1)
+            named_group.setLayout(named_layout)
+            splitter.addWidget(named_group)
+
+            splitter.setStretchFactor(0, 1)
+            splitter.setStretchFactor(1, 1)
+            layout.addWidget(splitter, stretch=1)
 
         # ------- توضیح روز و ذخیره -------
         self.txt_notes = QTextEdit()
@@ -204,19 +211,23 @@ class DailyEntryPage(QWidget):
 
         roots = [t for t in self._active_tasks() if t.parent_task_id is None]
         for task in roots:
-            if task.requires_name:
-                continue  # خدمات نام‌دار در جدول سمت دیگر ثبت می‌شوند
+            # در واحد IT خدمات نام‌دار به بخش جداگانه می‌روند؛ در واحد سایت همه تیکی‌اند
+            if task.requires_name and not self.use_checkboxes:
+                continue
             item = QTreeWidgetItem(self.task_tree, [task.title, ""])
             item.setData(0, Qt.UserRole, task.id)
             self._attach_spin(item, task)          # سردسته‌ها هم قابل شمارش‌اند
             self._add_branch(item, task)
         self.task_tree.expandAll()
 
-        self._refresh_named_task_list()
+        if self.use_checkboxes:
+            self.named_tasks = []
+        else:
+            self._refresh_named_task_list()
 
     def _add_branch(self, parent_item, parent_task):
         for sub in self._ordered_children(parent_task):
-            if sub.requires_name:
+            if sub.requires_name and not self.use_checkboxes:
                 # خدمات نام‌دار در جدول سمت دیگر ثبت می‌شوند، نه در درخت شمارش
                 continue
             item = QTreeWidgetItem(parent_item, [sub.title, ""])
@@ -230,11 +241,8 @@ class DailyEntryPage(QWidget):
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(0, Qt.Unchecked)
 
-        spin = NoWheelSpinBox()
-        spin.setRange(0, 999)
-        spin.setValue(0)
-        spin.setAlignment(Qt.AlignCenter)
-        spin.setFixedSize(104, 34)
+        spin = CountStepper(0, 999)
+        spin.setFixedWidth(112)
         self.task_tree.setItemWidget(item, 1, spin)
         # ارتفاع ردیف را به‌اندازه‌ی اسپین‌باکس بزرگ می‌کنیم تا محتوا بریده نشود
         item.setSizeHint(1, spin.sizeHint())
@@ -280,7 +288,8 @@ class DailyEntryPage(QWidget):
         self.record = self.find_record(day)
 
         self._clear_counts()
-        self.named_table.setRowCount(0)
+        if self.named_table is not None:
+            self.named_table.setRowCount(0)
         self.txt_notes.clear()
 
         if not self.record:
@@ -293,7 +302,7 @@ class DailyEntryPage(QWidget):
         self.txt_notes.setPlainText(self.record.short_description or "")
 
         for line in self.record.tasks:
-            if line.person_name:
+            if line.person_name and self.named_table is not None:
                 self.add_named_row(task_id=line.task_id, name=line.person_name,
                                    ext=line.person_extension, note=line.note)
                 continue
@@ -357,6 +366,8 @@ class DailyEntryPage(QWidget):
         self.named_table.removeRow(row)
 
     def _named_rows(self):
+        if not self.named_table:
+            return []
         rows = []
         for row in range(self.named_table.rowCount()):
             cmb = self.named_table.cellWidget(row, 0)

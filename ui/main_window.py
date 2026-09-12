@@ -4,7 +4,8 @@ from PySide6.QtCore import Qt
 from database.connection import SessionLocal
 from ui.daily_entry_page import DailyEntryPage
 from ui.my_reports_page import MyReportsPage
-from ui.dashboard_page import DashboardPage
+# DashboardPage به‌صورت تنبل (فقط هنگام باز شدن تبِ داشبورد) import می‌شود تا
+# کتابخانه‌ی سنگین matplotlib در زمان اجرای برنامه بارگذاری نشود و باز شدن سریع‌تر باشد.
 from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
@@ -17,6 +18,8 @@ class MainWindow(QMainWindow):
         self.technician = current_technician
         self.db_session = SessionLocal()
         self.wants_logout = False # فلگ برای خروج از حساب
+        self._dash_index = None   # ایندکس تب داشبورد (برای ساخت تنبل)
+        self.tab_dashboard = None
         
         self.setWindowTitle(f"IT Service Log - کاربر: {self.technician.full_name} ({self.technician.role})")
         self.setMinimumSize(1100, 768)
@@ -62,8 +65,9 @@ class MainWindow(QMainWindow):
         if self.technician.role == "Administrator":
             self.tab_admin_reports = AdminReportsPage(self.db_session)
             self.tabs.addTab(self.tab_admin_reports, "جستجو و گزارشات (Excel)")
-            self.tab_dashboard = DashboardPage(self.db_session)
-            self.tabs.addTab(self.tab_dashboard, "داشبورد مدیریت")
+            # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم
+            self.tab_dashboard = None
+            self._dash_index = self.tabs.addTab(QWidget(), "داشبورد مدیریت")
             self.tab_tasks = TasksPage(self.db_session)
             self.tabs.addTab(self.tab_tasks, "مدیریت خدمات")
             self.tab_technicians = TechniciansPage(self.db_session, self.technician)
@@ -76,6 +80,15 @@ class MainWindow(QMainWindow):
         self.close() # پنجره را می‌بندد تا فایل main.py لاگین را دوباره باز کند
 
     def on_tab_changed(self, index):
+        # ساخت تنبل داشبورد در اولین باز شدن (تا matplotlib در استارتاپ لود نشود)
+        if index == self._dash_index and self.tab_dashboard is None:
+            from ui.dashboard_page import DashboardPage
+            self.tab_dashboard = DashboardPage(self.db_session)
+            self.tabs.removeTab(self._dash_index)
+            self.tabs.insertTab(self._dash_index, self.tab_dashboard, "داشبورد مدیریت")
+            self.tabs.setCurrentIndex(self._dash_index)
+            return
+
         current_widget = self.tabs.widget(index)
         if hasattr(current_widget, 'load_data'): current_widget.load_data()
         elif hasattr(current_widget, 'load_tasks'): current_widget.load_tasks()
