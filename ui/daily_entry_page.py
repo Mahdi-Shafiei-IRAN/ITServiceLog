@@ -122,6 +122,8 @@ class DailyEntryPage(QWidget):
         self.named_table.setHorizontalHeaderLabels(NAMED_COLUMNS)
         self.named_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.named_table.verticalHeader().setVisible(False)
+        # ارتفاع ردیف‌ها را بالا می‌بریم تا کمبو/ورودی‌ها بریده نشوند و متن دیده شود
+        self.named_table.verticalHeader().setDefaultSectionSize(44)
         header = self.named_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # خدمت
         header.setSectionResizeMode(1, QHeaderView.Stretch)           # نام فرد
@@ -217,7 +219,11 @@ class DailyEntryPage(QWidget):
         spin.setRange(0, 999)
         spin.setValue(0)
         spin.setAlignment(Qt.AlignCenter)
+        spin.setMinimumHeight(34)
+        spin.setButtonSymbols(QSpinBox.UpDownArrows)
         self.task_tree.setItemWidget(item, 1, spin)
+        # ارتفاع ردیف را به‌اندازه‌ی اسپین‌باکس بزرگ می‌کنیم تا محتوا بریده نشود
+        item.setSizeHint(1, spin.sizeHint())
         self.count_widgets[task.id] = spin
 
     def _refresh_named_task_list(self):

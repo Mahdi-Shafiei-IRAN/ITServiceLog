@@ -168,6 +168,52 @@ QLineEdit:hover, QComboBox:hover { border: 1px solid %(border_strong)s; }
 QLineEdit::placeholder { color: %(text_muted)s; }
 
 QComboBox::drop-down { border: none; width: 22px; }
+
+/* ---------- اسپین‌باکس (شمارنده‌ی تعداد) ---------- */
+QSpinBox, QDoubleSpinBox {
+    background-color: %(input_bg)s;
+    color: %(text)s;
+    border: 1px solid %(border)s;
+    border-radius: 8px;
+    padding: 4px 10px;
+    min-height: 26px;
+    font-size: 15px;
+    font-weight: bold;
+}
+QSpinBox:focus, QDoubleSpinBox:focus { border: 1px solid %(primary)s; }
+QSpinBox:hover, QDoubleSpinBox:hover { border: 1px solid %(border_strong)s; }
+QSpinBox::up-button, QDoubleSpinBox::up-button {
+    subcontrol-origin: border;
+    subcontrol-position: top left;
+    width: 26px;
+    border-right: 1px solid %(border)s;
+    border-top-left-radius: 8px;
+    background-color: %(surface_alt)s;
+}
+QSpinBox::down-button, QDoubleSpinBox::down-button {
+    subcontrol-origin: border;
+    subcontrol-position: bottom left;
+    width: 26px;
+    border-right: 1px solid %(border)s;
+    border-bottom-left-radius: 8px;
+    background-color: %(surface_alt)s;
+}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover,
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+    background-color: %(primary)s;
+}
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 7px solid %(text)s;
+}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {
+    width: 0; height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid %(text)s;
+}
 QComboBox QAbstractItemView {
     background-color: %(surface)s;
     color: %(text)s;
