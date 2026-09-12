@@ -1,9 +1,16 @@
 <#
     Build the offline ITServiceLog installer with a single command.
 
-    Usage:
+    Easiest: just double-click  build.bat
+
+    Or from a terminal:
         powershell -ExecutionPolicy Bypass -File build.ps1
-        powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.2.0
+        powershell -ExecutionPolicy Bypass -File build.ps1 -Version 1.2.2
+
+    The build virtualenv and all dependencies are created automatically on the
+    first run. Requirements on the machine: Python 3 (python.org) and
+    Inno Setup 6 (jrsoftware.org). Override tool locations if needed with the
+    ITSL_BUILDVENV and ITSL_ISCC environment variables.
 
     Steps:
         1) Freeze the code with PyInstaller into a standalone folder (no Python needed)
@@ -18,9 +25,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Definition
 Set-Location $root
 
-# --- Tool paths (edit here if the environment moves) ---
-$Python = "C:\WND\p\buildvenv\Scripts\python.exe"
-$ISCC   = "C:\WND\p\innosetup\ISCC.exe"
+# --- Tool locations (override with environment variables if the machine differs) ---
+$VenvDir = if ($env:ITSL_BUILDVENV) { $env:ITSL_BUILDVENV } else { "C:\WND\p\buildvenv" }
+$Python  = Join-Path $VenvDir "Scripts\python.exe"
 
 # --- Resolve version ---
 if ([string]::IsNullOrWhiteSpace($Version)) {
@@ -35,9 +42,48 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
 }
 Write-Host "==> Building version $Version" -ForegroundColor Cyan
 
-# --- Check tools ---
-if (-not (Test-Path $Python)) { throw "Build Python not found: $Python" }
-if (-not (Test-Path $ISCC))   { throw "Inno Setup compiler not found: $ISCC" }
+# --- Ensure the build virtualenv exists (one-time automatic setup) ---
+if (-not (Test-Path $Python)) {
+    Write-Host "==> Build environment not found; creating it (one-time, may take a few minutes)..." -ForegroundColor Cyan
+    if (Get-Command py -ErrorAction SilentlyContinue) {
+        & py -3 -m venv $VenvDir
+    } elseif (Get-Command python -ErrorAction SilentlyContinue) {
+        & python -m venv $VenvDir
+    } else {
+        throw "Python 3 not found. Install Python 3 from python.org, then run this again."
+    }
+    if (-not (Test-Path $Python)) { throw "Failed to create build environment at $VenvDir" }
+
+    Write-Host "==> Installing build dependencies..." -ForegroundColor Cyan
+    & $Python -m pip install --upgrade pip
+    & $Python -m pip install -r "$root\requirements.txt"
+    # ابزار بسته‌بندی + درایورهای دیتابیس سرور (PostgreSQL و SQL Server)
+    & $Python -m pip install pyinstaller psycopg2-binary pyodbc
+    if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
+} else {
+    # اطمینان از نصب بودن ابزار بسته‌بندی حتی اگر venv از قبل ساخته شده بود
+    & $Python -c "import PyInstaller" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "==> Installing missing build tools..." -ForegroundColor Cyan
+        & $Python -m pip install pyinstaller psycopg2-binary
+    }
+}
+
+# --- Locate the Inno Setup compiler (ISCC.exe) ---
+$ISCC = $null
+$isccCandidates = @(
+    $env:ITSL_ISCC,
+    "C:\WND\p\innosetup\ISCC.exe",
+    "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+    "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
+)
+foreach ($c in $isccCandidates) {
+    if ($c -and (Test-Path $c)) { $ISCC = $c; break }
+}
+if (-not $ISCC) {
+    throw "Inno Setup compiler (ISCC.exe) not found. Install Inno Setup 6 from jrsoftware.org, " +
+          "or set the ITSL_ISCC environment variable to its full path."
+}
 
 # --- Step 0: Build the seed (current users + operations) ---
 Write-Host "==> Building seed from current database..." -ForegroundColor Cyan
