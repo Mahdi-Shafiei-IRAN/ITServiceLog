@@ -65,7 +65,7 @@ def export_records_to_excel(filepath, records, technician=None, date_range=None)
 
     # ---------------- شیت ۲: تفکیک خدمات ----------------
     ws2 = _new_sheet(wb, "تفکیک خدمات", [
-        "ردیف", "تاریخ", "بخش", "کارشناس", "خدمت", "تعداد"
+        "ردیف", "تاریخ", "بخش", "کارشناس", "خدمت", "تعداد", "توضیح"
     ])
     row = 2
     for record in records:
@@ -77,10 +77,12 @@ def export_records_to_excel(filepath, records, technician=None, date_range=None)
                 record.technician_name_snapshot or "-",
                 line.task.title if line.task else "-",
                 line.quantity or 1,
+                line.note or "-",
             ], wrap_from=5)
             row += 1
     ws2.column_dimensions['D'].width = 20
     ws2.column_dimensions['E'].width = 40
+    ws2.column_dimensions['G'].width = 32
 
     # ---------------- شیت ۳: خدمات نام‌دار ----------------
     ws3 = _new_sheet(wb, "خدمات نام‌دار", [

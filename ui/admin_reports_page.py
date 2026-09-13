@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, QDate
 from sqlalchemy.orm import Session
 from database.models import ServiceRecord, Technician, DEPARTMENTS
-from reports.excel_exporter import export_records_to_excel
+# export_records_to_excel به‌صورت تنبل داخل متد خروجی import می‌شود (سرعت استارتاپ)
 from reports import summary
 from ui.record_edit_dialog import EditServiceRecordDialog
 from ui.my_reports_page import RecordDetailDialog
@@ -360,6 +360,7 @@ class AdminReportsPage(QWidget):
         )
         if not filepath:
             return
+        from reports.excel_exporter import export_records_to_excel
         try:
             selected_tech_id = self.cmb_tech.currentData()
             selected_tech = self.db.get(Technician, selected_tech_id) if selected_tech_id else None

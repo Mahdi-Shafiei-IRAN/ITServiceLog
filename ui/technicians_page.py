@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QComboBox, QMessageBox, QAbstractItemView)
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
-from database.models import Technician, DEPARTMENTS
+from database.models import Technician, ServiceRecord, DEPARTMENTS
 
 class TechniciansPage(QWidget):
     def __init__(self, db_session: Session, current_technician=None):
@@ -160,6 +160,7 @@ class TechniciansPage(QWidget):
             tech = self.db.get(Technician, self.editing_id)
             if not tech:
                 return QMessageBox.warning(self, "خطا", "کارشناس یافت نشد.")
+            name_changed = tech.full_name != name
             tech.full_name = name
             tech.internal_extension = ext
             tech.username = user
@@ -167,6 +168,13 @@ class TechniciansPage(QWidget):
             tech.department = dept
             if pwd:  # فقط اگر رمز جدید وارد شده باشد
                 tech.password_hash = pwd
+
+            # با تغییر نام، همه‌ی گزارش‌های قبلی همین شخص هم به نام جدید به‌روز می‌شوند
+            # تا در جدول‌ها و نمودارها به‌عنوان فرد جدید نشان داده نشوند.
+            if name_changed:
+                self.db.query(ServiceRecord).filter_by(technician_id=tech.id).update(
+                    {ServiceRecord.technician_name_snapshot: name},
+                    synchronize_session=False)
             self.db.commit()
             QMessageBox.information(self, "موفق", "اطلاعات کارشناس با موفقیت به‌روزرسانی شد.")
         else:

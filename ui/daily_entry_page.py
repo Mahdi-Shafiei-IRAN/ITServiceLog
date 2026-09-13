@@ -33,8 +33,9 @@ class DailyEntryPage(QWidget):
         # واحد سایت مثل قبل تیکی است؛ تعداد کنارش اختیاری است. واحد IT فقط تعدادی است.
         self.use_checkboxes = (department == DEPT_SITE)
         self.record = None            # برگه‌ی روزانه‌ی در حال ویرایش
-        self.count_widgets = {}       # task_id -> QSpinBox
+        self.count_widgets = {}       # task_id -> CountStepper
         self.task_items = {}          # task_id -> QTreeWidgetItem (برای تیک‌ها)
+        self.note_widgets = {}        # task_id -> QLineEdit توضیح کوتاه (واحد سایت)
         self.named_tasks = []         # [(id, title)]
         self.setup_ui()
         self.load_data()
@@ -87,13 +88,20 @@ class DailyEntryPage(QWidget):
         general_layout.addWidget(self.txt_task_search)
 
         self.task_tree = QTreeWidget()
-        self.task_tree.setColumnCount(2)
-        count_header = "تعداد (اختیاری)" if self.use_checkboxes else "تعداد"
-        self.task_tree.setHeaderLabels(["خدمت", count_header])
-        self.task_tree.setColumnWidth(0, 340)
-        self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
-        self.task_tree.setColumnWidth(1, 118)
+        if self.use_checkboxes:
+            # واحد سایت: خدمت | تعداد اختیاری | توضیح کوتاه اختیاری
+            self.task_tree.setColumnCount(3)
+            self.task_tree.setHeaderLabels(["خدمت", "تعداد (اختیاری)", "توضیح کوتاه (اختیاری)"])
+            self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+            self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.task_tree.header().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.task_tree.setColumnWidth(1, 118)
+        else:
+            self.task_tree.setColumnCount(2)
+            self.task_tree.setHeaderLabels(["خدمت", "تعداد"])
+            self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+            self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.task_tree.setColumnWidth(1, 118)
         general_layout.addWidget(self.task_tree)
 
         clear_label = "پاک کردن انتخاب‌ها و تعدادها" if self.use_checkboxes else "صفر کردن همه‌ی تعدادها"
@@ -207,6 +215,7 @@ class DailyEntryPage(QWidget):
         self.task_tree.clear()
         self.count_widgets = {}
         self.task_items = {}
+        self.note_widgets = {}
         self.named_tasks = []
 
         roots = [t for t in self._active_tasks() if t.parent_task_id is None]
@@ -248,6 +257,13 @@ class DailyEntryPage(QWidget):
         item.setSizeHint(1, spin.sizeHint())
         self.count_widgets[task.id] = spin
         self.task_items[task.id] = item
+
+        # واحد سایت: یک فیلد توضیح کوتاه اختیاری برای هر خدمت
+        if self.use_checkboxes:
+            note = QLineEdit()
+            note.setPlaceholderText("توضیح کوتاه (اختیاری)...")
+            self.task_tree.setItemWidget(item, 2, note)
+            self.note_widgets[task.id] = note
 
     def _refresh_named_task_list(self):
         # ترتیب بر اساس اولویت (position) که از _active_tasks می‌آید
@@ -314,6 +330,9 @@ class DailyEntryPage(QWidget):
                 # عدد فقط وقتی بیشتر از ۱ باشد نشان داده می‌شود؛ در غیر این صورت خالی می‌ماند
                 if spin:
                     spin.setValue(qty if qty > 1 else 0)
+                note_w = self.note_widgets.get(line.task_id)
+                if note_w is not None:
+                    note_w.setText(line.note or "")
             elif spin:
                 spin.setValue(qty)
 
@@ -323,6 +342,8 @@ class DailyEntryPage(QWidget):
         for item in self.task_items.values():
             if item.flags() & Qt.ItemIsUserCheckable:
                 item.setCheckState(0, Qt.Unchecked)
+        for note in self.note_widgets.values():
+            note.clear()
 
     # ------------------------------------------------------ جدول نام‌دارها
     def add_named_row(self, task_id=None, name="", ext="", note=""):
@@ -458,8 +479,12 @@ class DailyEntryPage(QWidget):
         record.short_description = self.txt_notes.toPlainText().strip()
 
         for task_id, qty in counts.items():
+            note = None
+            if self.use_checkboxes:
+                w = self.note_widgets.get(task_id)
+                note = (w.text().strip() or None) if w else None
             self.db.add(ServiceRecordTask(
-                service_record_id=record.id, task_id=task_id, quantity=qty))
+                service_record_id=record.id, task_id=task_id, quantity=qty, note=note))
 
         for item in named:
             self._ensure_employee(item["name"], item["ext"])

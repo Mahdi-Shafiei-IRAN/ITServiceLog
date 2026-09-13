@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QDate
 from sqlalchemy.orm import Session
 from database.models import ServiceRecord, DEPARTMENTS
-from reports.excel_exporter import export_records_to_excel
+# export_records_to_excel به‌صورت تنبل داخل متد خروجی import می‌شود (سرعت استارتاپ)
 from reports import summary
 from ui.record_edit_dialog import EditServiceRecordDialog
 
@@ -50,6 +50,7 @@ class RecordDetailDialog(QDialog):
         counted = QTextEdit()
         counted.setReadOnly(True)
         lines = [f"• {l.task.title if l.task else '؟'} — تعداد: {l.quantity or 1}"
+                 + (f"  ({l.note})" if l.note else "")
                  for l in summary.counted_lines(record)]
         counted.setPlainText("\n".join(lines) if lines else "موردی ثبت نشده است.")
         layout.addWidget(counted)
@@ -399,6 +400,7 @@ class MyReportsPage(QWidget):
         )
         if not filepath:
             return
+        from reports.excel_exporter import export_records_to_excel
         try:
             export_records_to_excel(filepath, records, technician=self.technician)
             QMessageBox.information(self, "موفق", f"فایل اکسل ذخیره شد:\n{filepath}")

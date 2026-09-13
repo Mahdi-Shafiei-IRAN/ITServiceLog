@@ -60,40 +60,51 @@ _NEW_COLUMNS = [
 
 
 def _migrate():
-    """ستون‌های جدید را به دیتابیس‌های قدیمی اضافه می‌کند (بدون از دست رفتن داده)."""
+    """ستون‌های جدید را به دیتابیس‌های قدیمی اضافه می‌کند (بدون از دست رفتن داده).
+
+    مقداردهی پیش‌فرض فقط برای ستون‌هایی اجرا می‌شود که همین حالا اضافه شده‌اند؛
+    بنابراین روی دیتابیسِ به‌روز هیچ نوشتنی انجام نمی‌شود و استارتاپ سریع می‌ماند
+    (به‌ویژه روی PostgreSQL شبکه‌ای).
+    """
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
+    # ستون‌های موجود هر جدول را یک‌بار می‌خوانیم (به‌جای هر ستون یک‌بار)
+    table_cols = {t: {c["name"] for c in inspector.get_columns(t)} for t in existing_tables}
+
+    added = set()  # (table, column) هایی که تازه اضافه شدند
     with engine.begin() as conn:
         for table, column, ddl in _NEW_COLUMNS:
-            if table not in existing_tables:
-                continue
-            cols = {c["name"] for c in inspector.get_columns(table)}
-            if column in cols:
+            if table not in existing_tables or column in table_cols.get(table, ()):
                 continue
             conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            added.add((table, column))
 
-    # مقداردهی پیش‌فرض رکوردهای قدیمی
+    if not added:
+        return  # اسکیمای دیتابیس به‌روز است؛ نیازی به backfill نیست
+
     with engine.begin() as conn:
-        if "tasks" in existing_tables:
+        if ("tasks", "department") in added:
             conn.execute(text(
                 "UPDATE tasks SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
+        if ("tasks", "requires_name") in added:
             conn.execute(text(
                 "UPDATE tasks SET requires_name = 0 WHERE requires_name IS NULL"))
-            # ترتیب اولیه‌ی رکوردهای قدیمی بر اساس شناسه تا جابه‌جایی دستی بعداً ممکن شود
+        if ("tasks", "position") in added:
             conn.execute(text(
                 "UPDATE tasks SET position = id WHERE position IS NULL OR position = 0"))
-        if "technicians" in existing_tables:
+        if ("technicians", "department") in added:
             conn.execute(text(
                 "UPDATE technicians SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
-        if "service_records" in existing_tables:
+        if ("service_records", "department") in added:
             conn.execute(text(
                 "UPDATE service_records SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
+        if ("service_records", "report_date") in added:
             conn.execute(text(
                 "UPDATE service_records SET report_date = DATE(created_at) "
                 "WHERE report_date IS NULL" if DB_URL.startswith("sqlite") else
                 "UPDATE service_records SET report_date = CAST(created_at AS DATE) "
                 "WHERE report_date IS NULL"))
-        if "service_record_tasks" in existing_tables:
+        if ("service_record_tasks", "quantity") in added:
             conn.execute(text(
                 "UPDATE service_record_tasks SET quantity = 1 WHERE quantity IS NULL"))
 
