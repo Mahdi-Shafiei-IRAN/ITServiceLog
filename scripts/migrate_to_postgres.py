@@ -89,9 +89,34 @@ def main():
     init_db()
 
     from sqlalchemy import create_engine, text
+    from sqlalchemy.exc import OperationalError
     from database.models import Base
 
     target_engine = create_engine(target_url, future=True)
+
+    # --- بررسی اتصال به مقصد با پیام خطای روشن ---
+    host = target_url.split("@")[-1].split("/")[0]
+    try:
+        with target_engine.connect():
+            pass
+    except OperationalError as exc:
+        msg = str(getattr(exc, "orig", exc)).strip()
+        print("\n✗ اتصال به سرور PostgreSQL برقرار نشد.\n")
+        print(f"  آدرسی که تلاش شد: {host}")
+        print(f"  پیام دیتابیس: {msg}\n")
+        if "translate host name" in msg or "could not translate" in msg:
+            print("  علت: نام سرور پیدا نشد. در آدرس --target به‌جای اسم نمونه، نام یا IP واقعی")
+            print("       سرور را بگذارید. مثال: ...@192.168.1.50:5432/itservicelog")
+            print("       (اگر اسکریپت را روی خود سرور اجرا می‌کنید از localhost استفاده کنید.)")
+        elif "password authentication failed" in msg:
+            print("  علت: رمز کاربر itapp اشتباه است.")
+        elif "Connection refused" in msg or "could not connect" in msg or "timeout" in msg.lower():
+            print("  علت: سرور در دسترس نیست. بررسی کنید: PostgreSQL روشن باشد، پورت 5432 در")
+            print("       فایروال باز باشد، و listen_addresses='*' و pg_hba.conf تنظیم شده باشند.")
+        elif 'database "' in msg and "does not exist" in msg:
+            print("  علت: دیتابیس itservicelog ساخته نشده است. روی سرور اجرا کنید:")
+            print("       CREATE DATABASE itservicelog OWNER itapp;")
+        sys.exit(1)
 
     # جدول‌ها را روی مقصد می‌سازیم (اگر نباشند)
     Base.metadata.create_all(bind=target_engine)
