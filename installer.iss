@@ -39,8 +39,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "ایجاد میانبر روی دسکتاپ"; GroupDescription: "میانبرها:"; Flags: unchecked
 
 [Files]
-; کل خروجی PyInstaller (پوشه‌ی onedir) را کپی می‌کند
-Source: "dist\ITServiceLog\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; کل خروجی PyInstaller (پوشه‌ی onedir) را کپی می‌کند — به‌جز config.json که جداگانه و
+; با onlyifdoesntexist نصب می‌شود تا هنگام آپدیت، تنظیمات سرورِ ادمین بازنویسی نشود.
+Source: "dist\ITServiceLog\*"; DestDir: "{app}"; Excludes: "config.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+; config.json ساخته‌شده در build (آدرس سرور) — فقط اگر از قبل وجود نداشته باشد نصب می‌شود
+Source: "dist\ITServiceLog\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist skipifsourcedoesntexist
 ; آیکون برنامه کنار فایل اجرایی تا شورتکات‌ها همیشه لوگو را نشان دهند
 Source: "assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; نمونه‌ی پیکربندی اتصال به سرور/دامنه. برای اجرای شبکه‌ای، این فایل را کنار

@@ -13,3 +13,7 @@ release/
 
 # Generated seed (contains data; rebuilt each release)
 assets/seed.sqlite
+
+# Deployment config with server credentials (never commit)
+/deploy.json
+/config.json

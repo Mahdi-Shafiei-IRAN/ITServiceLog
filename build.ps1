@@ -18,7 +18,10 @@
     Final output:  release\ITServiceLog-Setup-<version>.exe
 #>
 param(
-    [string]$Version = ""
+    [string]$Version = "",
+    # آدرس دیتابیس سرور که داخل بسته به‌صورت config.json قرار می‌گیرد.
+    # اگر ندهید، از فایل deploy.json کنار پروژه خوانده می‌شود (در گیت نیست).
+    [string]$DbUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -129,6 +132,20 @@ $piArgs += "main.py"
 & $Python @piArgs
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed" }
 if (-not (Test-Path "$root\dist\ITServiceLog\ITServiceLog.exe")) { throw "PyInstaller output missing" }
+
+# --- Step 1.5: Bake config.json (server db_url) into the package ---
+# مقدار از پارامتر -DbUrl یا از فایل deploy.json (خارج از گیت) خوانده می‌شود.
+$deployUrl = $DbUrl
+if ([string]::IsNullOrWhiteSpace($deployUrl) -and (Test-Path "$root\deploy.json")) {
+    try { $deployUrl = (Get-Content "$root\deploy.json" -Raw | ConvertFrom-Json).db_url } catch {}
+}
+if (-not [string]::IsNullOrWhiteSpace($deployUrl)) {
+    $cfg = @{ db_url = $deployUrl } | ConvertTo-Json
+    Set-Content -Path "$root\dist\ITServiceLog\config.json" -Value $cfg -Encoding utf8
+    Write-Host "    config.json baked with server db_url" -ForegroundColor DarkGray
+} else {
+    Write-Host "    no db_url provided (-DbUrl or deploy.json); installer ships WITHOUT config.json" -ForegroundColor Yellow
+}
 
 # --- Step 2: Inno Setup ---
 Write-Host "==> Building installer with Inno Setup..." -ForegroundColor Cyan

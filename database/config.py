@@ -83,6 +83,11 @@ def is_sqlite():
     return database_url().startswith("sqlite")
 
 
+def is_configured():
+    """آیا آدرس دیتابیس سرور به‌صورت صریح تنظیم شده است؟ (متغیر محیطی یا config.json)"""
+    return bool(os.getenv("ITSERVICELOG_DB") or load_config().get("db_url"))
+
+
 def ad_config():
     ad = load_config().get("ad") or {}
     return {
