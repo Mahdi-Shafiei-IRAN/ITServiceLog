@@ -11,7 +11,8 @@ from sqlalchemy import func
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from database.models import ServiceRecord, ServiceRecordTask, Task, Technician
+from database.models import (ServiceRecord, ServiceRecordTask, Task, Technician,
+                             SiteDailyActivity, DEPT_IT, DEPT_SITE)
 from ui.theme import theme
 
 
@@ -29,10 +30,7 @@ class StatCard(QFrame):
                 border-radius: 10px;
                 padding: 12px;
             }}
-            QLabel {{
-                color: white;
-                background: transparent;
-            }}
+            QLabel {{ color: white; background: transparent; }}
         """)
         layout = QVBoxLayout(self)
         layout.setSpacing(4)
@@ -65,104 +63,87 @@ class DashboardPage(QWidget):
         header.setObjectName("PageTitle")
         main_layout.addWidget(header)
 
-        # ---- نوار انتخاب بازه‌ی زمانی نمودارها ----
+        # ---- نوار انتخاب بازه‌ی زمانی ----
         filter_bar = QHBoxLayout()
         self.cmb_period = QComboBox()
         for label, key in [
-            ("۳۰ روز اخیر", "last30"),
-            ("۷ روز اخیر", "last7"),
-            ("این هفته", "this_week"),
-            ("این ماه", "this_month"),
-            ("ماه گذشته", "last_month"),
-            ("۹۰ روز اخیر", "last90"),
-            ("همه‌ی زمان‌ها", "all"),
-            ("بازه‌ی دلخواه", "custom"),
+            ("۳۰ روز اخیر", "last30"), ("۷ روز اخیر", "last7"),
+            ("این هفته", "this_week"), ("این ماه", "this_month"),
+            ("ماه گذشته", "last_month"), ("۹۰ روز اخیر", "last90"),
+            ("همه‌ی زمان‌ها", "all"), ("بازه‌ی دلخواه", "custom"),
         ]:
             self.cmb_period.addItem(label, key)
         self.cmb_period.currentIndexChanged.connect(self._period_changed)
 
-        self.date_from = QDateEdit()
-        self.date_from.setCalendarPopup(True)
+        self.date_from = QDateEdit(); self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy/MM/dd")
-        self.date_from.setDate(QDate.currentDate().addDays(-29))
-        self.date_from.setEnabled(False)
+        self.date_from.setDate(QDate.currentDate().addDays(-29)); self.date_from.setEnabled(False)
         self.date_from.dateChanged.connect(self.refresh_dashboard)
-
-        self.date_to = QDateEdit()
-        self.date_to.setCalendarPopup(True)
+        self.date_to = QDateEdit(); self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy/MM/dd")
-        self.date_to.setDate(QDate.currentDate())
-        self.date_to.setEnabled(False)
+        self.date_to.setDate(QDate.currentDate()); self.date_to.setEnabled(False)
         self.date_to.dateChanged.connect(self.refresh_dashboard)
 
         filter_bar.addWidget(QLabel("بازه‌ی نمودارها:"))
         filter_bar.addWidget(self.cmb_period)
-        filter_bar.addWidget(QLabel("از:"))
-        filter_bar.addWidget(self.date_from)
-        filter_bar.addWidget(QLabel("تا:"))
-        filter_bar.addWidget(self.date_to)
+        filter_bar.addWidget(QLabel("از:")); filter_bar.addWidget(self.date_from)
+        filter_bar.addWidget(QLabel("تا:")); filter_bar.addWidget(self.date_to)
         filter_bar.addStretch()
         main_layout.addLayout(filter_bar)
 
-        # ---- کارت‌های KPI ----
+        # ---- کارت‌های KPI (IT / نام‌دار / سایت جدا از هم) ----
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(15)
-        self.card_today = StatCard("خدمات امروز", "0", "مجموع تعداد خدمات امروز", "#0284C7")
-        self.card_week = StatCard("خدمات ۷ روز اخیر", "0", "۷ روز گذشته", "#0D9488")
-        self.card_month = StatCard("خدمات ۳۰ روز اخیر", "0", "۳۰ روز گذشته", "#6366F1")
+        self.card_it = StatCard("خدمات واحد IT", "0", "در بازه‌ی انتخابی", "#0284C7")
+        self.card_named = StatCard("خدمات نام‌دار", "0", "ارتقا/اسمبل/نصب ویندوز و ...", "#7C3AED")
+        self.card_site = StatCard("فعالیت واحد سایت", "0", "ردیف‌های گزارش روزانه‌ی سایت", "#0D9488")
         self.card_techs = StatCard("کارشناسان فعال", "0", "آماده ارائه خدمت", "#D97706")
-        kpi_layout.addWidget(self.card_today)
-        kpi_layout.addWidget(self.card_week)
-        kpi_layout.addWidget(self.card_month)
-        kpi_layout.addWidget(self.card_techs)
+        for c in (self.card_it, self.card_named, self.card_site, self.card_techs):
+            kpi_layout.addWidget(c)
         main_layout.addLayout(kpi_layout)
 
         # ---- نمودارها ----
-        charts_grid = QGridLayout()
-        charts_grid.setSpacing(15)
+        grid = QGridLayout()
+        grid.setSpacing(15)
 
-        self.fig_tech = Figure(figsize=(5, 3.0))
-        self.canvas_tech = FigureCanvas(self.fig_tech)
+        self.fig_tech = Figure(figsize=(5, 2.8)); self.canvas_tech = FigureCanvas(self.fig_tech)
         self.canvas_tech.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        charts_grid.addWidget(
-            self._create_chart_container("عملکرد کارشناسان (در بازه‌ی انتخابی)", self.canvas_tech), 0, 0)
+        grid.addWidget(self._chart_box("عملکرد کارشناسان (IT + سایت)", self.canvas_tech), 0, 0)
 
-        self.fig_tasks = Figure(figsize=(5, 3.0))
-        self.canvas_tasks = FigureCanvas(self.fig_tasks)
-        self.canvas_tasks.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        charts_grid.addWidget(
-            self._create_chart_container("بیشترین خدمات انجام‌شده (در بازه)", self.canvas_tasks), 0, 1)
+        self.fig_it = Figure(figsize=(5, 2.8)); self.canvas_it = FigureCanvas(self.fig_it)
+        self.canvas_it.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        grid.addWidget(self._chart_box("بیشترین خدمات IT (۱۰ مورد برتر)", self.canvas_it), 0, 1)
 
-        self.fig_trend = Figure(figsize=(10, 2.8))
-        self.canvas_trend = FigureCanvas(self.fig_trend)
+        self.fig_named = Figure(figsize=(5, 2.8)); self.canvas_named = FigureCanvas(self.fig_named)
+        self.canvas_named.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        grid.addWidget(self._chart_box("خدمات نام‌دار به تفکیک نوع", self.canvas_named), 1, 0)
+
+        self.fig_site = Figure(figsize=(5, 2.8)); self.canvas_site = FigureCanvas(self.fig_site)
+        self.canvas_site.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        grid.addWidget(self._chart_box("فعالیت واحد سایت به تفکیک بستر", self.canvas_site), 1, 1)
+
+        self.fig_trend = Figure(figsize=(10, 2.6)); self.canvas_trend = FigureCanvas(self.fig_trend)
         self.canvas_trend.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        charts_grid.addWidget(
-            self._create_chart_container("روند روزانه‌ی خدمات", self.canvas_trend), 1, 0, 1, 2)
+        grid.addWidget(self._chart_box("روند روزانه (IT و سایت)", self.canvas_trend), 2, 0, 1, 2)
 
-        charts_grid.setRowStretch(0, 1)
-        charts_grid.setRowStretch(1, 1)
-        main_layout.addLayout(charts_grid, stretch=1)
+        for r in (0, 1, 2):
+            grid.setRowStretch(r, 1)
+        main_layout.addLayout(grid, stretch=1)
 
-    def _create_chart_container(self, title: str, canvas: QWidget) -> QFrame:
-        container = QFrame()
-        container.setObjectName("Card")
-        layout = QVBoxLayout(container)
-        layout.setContentsMargins(14, 12, 14, 12)
-        lbl = QLabel(title)
-        lbl.setObjectName("SectionTitle")
-        layout.addWidget(lbl)
-        layout.addWidget(canvas)
+    def _chart_box(self, title: str, canvas: QWidget) -> QFrame:
+        container = QFrame(); container.setObjectName("Card")
+        layout = QVBoxLayout(container); layout.setContentsMargins(14, 12, 14, 12)
+        lbl = QLabel(title); lbl.setObjectName("SectionTitle")
+        layout.addWidget(lbl); layout.addWidget(canvas)
         return container
 
     # ------------------------------------------------------- بازه‌ی زمانی
     def _period_changed(self):
         is_custom = self.cmb_period.currentData() == "custom"
-        self.date_from.setEnabled(is_custom)
-        self.date_to.setEnabled(is_custom)
+        self.date_from.setEnabled(is_custom); self.date_to.setEnabled(is_custom)
         self.refresh_dashboard()
 
     def _chart_range(self):
-        """(start, end) بازه‌ی نمودارها را برمی‌گرداند (همیشه محدود، نه None)."""
         key = self.cmb_period.currentData()
         today = date.today()
         if key == "last7":
@@ -178,126 +159,166 @@ class DashboardPage(QWidget):
         elif key == "last90":
             start, end = today - timedelta(days=89), today
         elif key == "custom":
-            start = self.date_from.date().toPython()
-            end = self.date_to.date().toPython()
+            start = self.date_from.date().toPython(); end = self.date_to.date().toPython()
         elif key == "all":
             first = self.db.query(func.min(ServiceRecord.report_date)).scalar()
-            start = first or (today - timedelta(days=29))
+            first_site = self.db.query(func.min(SiteDailyActivity.report_date)).scalar()
+            candidates = [d for d in (first, first_site) if d]
+            start = min(candidates) if candidates else today - timedelta(days=29)
             end = today
-        else:  # last30
+        else:
             start, end = today - timedelta(days=29), today
         if end < start:
             start, end = end, start
-        # سقف امنیتی برای نمودار روزانه (حداکثر ۱۸۰ روز)
         if (end - start).days > 180:
             start = end - timedelta(days=180)
         return start, end
 
+    # --------------------------------------------------------- کوئری‌ها
+    def _it_records(self, q):
+        """فقط رکوردهای واحد IT (رکوردهای قدیمیِ سایت کنار گذاشته می‌شوند)."""
+        return q.filter(func.coalesce(ServiceRecord.department, DEPT_IT) != DEPT_SITE)
+
+    def _it_qty(self, start, end, named=None):
+        q = (self.db.query(func.sum(ServiceRecordTask.quantity))
+             .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
+             .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end))
+        q = self._it_records(q)
+        if named is True:
+            q = q.filter(ServiceRecordTask.person_name.isnot(None),
+                         ServiceRecordTask.person_name != "")
+        elif named is False:
+            q = q.filter((ServiceRecordTask.person_name.is_(None)) |
+                         (ServiceRecordTask.person_name == ""))
+        return int(q.scalar() or 0)
+
+    def _named_count(self, start, end):
+        q = (self.db.query(func.count(ServiceRecordTask.id))
+             .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
+             .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end,
+                     ServiceRecordTask.person_name.isnot(None),
+                     ServiceRecordTask.person_name != ""))
+        return int(self._it_records(q).scalar() or 0)
+
+    def _site_count(self, start, end):
+        return int(self.db.query(func.count(SiteDailyActivity.id))
+                   .filter(SiteDailyActivity.report_date >= start,
+                           SiteDailyActivity.report_date <= end).scalar() or 0)
+
     # --------------------------------------------------------- بازآوری
     def refresh_dashboard(self):
-        today = date.today()
+        start, end = self._chart_range()
+        p = theme.palette
+        surface = p["surface"]; text_color = p["text"]
 
-        def service_count(start, end=None):
-            q = (self.db.query(func.sum(ServiceRecordTask.quantity))
-                 .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
-                 .filter(ServiceRecord.report_date >= start))
-            if end is not None:
-                q = q.filter(ServiceRecord.report_date <= end)
-            return int(q.scalar() or 0)
-
-        self.card_today.lbl_value.setText(str(service_count(today)))
-        self.card_week.lbl_value.setText(str(service_count(today - timedelta(days=6))))
-        self.card_month.lbl_value.setText(str(service_count(today - timedelta(days=29))))
+        # ---- کارت‌ها ----
+        self.card_it.lbl_value.setText(str(self._it_qty(start, end)))
+        self.card_named.lbl_value.setText(str(self._named_count(start, end)))
+        self.card_site.lbl_value.setText(str(self._site_count(start, end)))
         self.card_techs.lbl_value.setText(
             str(self.db.query(Technician).filter_by(is_active=True).count()))
 
-        start, end = self._chart_range()
-        p = theme.palette
-        surface = p["surface"]
-        text_color = p["text"]
+        def hbar(fig, canvas, pairs, color):
+            fig.clear(); fig.set_facecolor(surface)
+            ax = fig.add_subplot(111); ax.set_facecolor(surface)
+            if pairs:
+                labels = [str(k) for k, _ in pairs]
+                values = [int(v or 0) for _, v in pairs]
+                bars = ax.barh(labels, values, color=color, height=0.6)
+                ax.bar_label(bars, padding=3, fontsize=8, color=text_color)
+                ax.invert_yaxis()
+                ax.margins(x=0.15)
+            else:
+                ax.text(0.5, 0.5, "داده‌ای در این بازه نیست", ha="center", va="center",
+                        color=text_color, transform=ax.transAxes)
+            ax.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
+            ax.tick_params(left=False, bottom=False, labelbottom=False,
+                           labelsize=9, colors=text_color)
+            fig.tight_layout(); canvas.draw()
 
-        def in_range(q):
-            return (q.filter(ServiceRecord.report_date >= start)
-                     .filter(ServiceRecord.report_date <= end))
+        # ---- ۱: عملکرد کارشناسان (IT + سایت) ----
+        it_tech = (self.db.query(Technician.full_name, func.sum(ServiceRecordTask.quantity))
+                   .join(ServiceRecord, ServiceRecord.technician_id == Technician.id)
+                   .join(ServiceRecordTask, ServiceRecord.id == ServiceRecordTask.service_record_id)
+                   .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end))
+        it_tech = self._it_records(it_tech).group_by(Technician.id, Technician.full_name).all()
+        combined = {}
+        for name, qty in it_tech:
+            combined[name or "نامشخص"] = combined.get(name or "نامشخص", 0) + int(qty or 0)
+        site_tech = (self.db.query(Technician.full_name, func.count(SiteDailyActivity.id))
+                     .join(SiteDailyActivity, SiteDailyActivity.technician_id == Technician.id)
+                     .filter(SiteDailyActivity.report_date >= start,
+                             SiteDailyActivity.report_date <= end)
+                     .group_by(Technician.id, Technician.full_name).all())
+        for name, cnt in site_tech:
+            combined[name or "نامشخص"] = combined.get(name or "نامشخص", 0) + int(cnt or 0)
+        top_tech = sorted(combined.items(), key=lambda kv: kv[1], reverse=True)[:8]
+        hbar(self.fig_tech, self.canvas_tech, top_tech, p["primary"])
 
-        # ---- نمودار ۱: عملکرد کارشناسان (بر اساس شناسه، با نام فعلی) ----
-        tech_data = in_range(
-            self.db.query(Technician.full_name, func.sum(ServiceRecordTask.quantity))
-            .join(ServiceRecord, ServiceRecord.technician_id == Technician.id)
-            .join(ServiceRecordTask, ServiceRecord.id == ServiceRecordTask.service_record_id)
-        ).group_by(Technician.id, Technician.full_name) \
-         .order_by(func.sum(ServiceRecordTask.quantity).desc()).limit(8).all()
+        # ---- ۲: بیشترین خدمات IT (شمارشی، بدون نام‌دارها) ----
+        it_tasks = (self.db.query(Task.title, func.sum(ServiceRecordTask.quantity))
+                    .join(ServiceRecordTask, Task.id == ServiceRecordTask.task_id)
+                    .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
+                    .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end,
+                            (ServiceRecordTask.person_name.is_(None)) |
+                            (ServiceRecordTask.person_name == "")))
+        it_tasks = (self._it_records(it_tasks).group_by(Task.title)
+                    .order_by(func.sum(ServiceRecordTask.quantity).desc()).limit(10).all())
+        hbar(self.fig_it, self.canvas_it, it_tasks, "#2563EB")
 
-        self.fig_tech.clear()
-        self.fig_tech.set_facecolor(surface)
-        ax1 = self.fig_tech.add_subplot(111)
-        if tech_data:
-            names = [d[0] or "نامشخص" for d in tech_data]
-            counts = [int(d[1] or 0) for d in tech_data]
-            bars = ax1.barh(names, counts, color=p["primary"], height=0.6)
-            ax1.bar_label(bars, padding=4, fontsize=9, color=text_color)
-            ax1.invert_yaxis()
-        else:
-            ax1.text(0.5, 0.5, "داده‌ای در این بازه نیست", ha="center", va="center",
-                     color=text_color, transform=ax1.transAxes)
-        ax1.set_facecolor(surface)
-        ax1.spines[['top', 'right', 'left', 'bottom']].set_visible(False)
-        ax1.tick_params(left=False, bottom=False, labelsize=9, colors=text_color)
-        self.fig_tech.tight_layout()
-        self.canvas_tech.draw()
+        # ---- ۳: خدمات نام‌دار به تفکیک نوع ----
+        named = (self.db.query(Task.title, func.count(ServiceRecordTask.id))
+                 .join(ServiceRecordTask, Task.id == ServiceRecordTask.task_id)
+                 .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
+                 .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end,
+                         ServiceRecordTask.person_name.isnot(None),
+                         ServiceRecordTask.person_name != ""))
+        named = (self._it_records(named).group_by(Task.title)
+                 .order_by(func.count(ServiceRecordTask.id).desc()).limit(10).all())
+        hbar(self.fig_named, self.canvas_named, named, "#7C3AED")
 
-        # ---- نمودار ۲: بیشترین خدمات ----
-        task_data = in_range(
-            self.db.query(Task.title, func.sum(ServiceRecordTask.quantity))
-            .join(ServiceRecordTask, Task.id == ServiceRecordTask.task_id)
-            .join(ServiceRecord, ServiceRecord.id == ServiceRecordTask.service_record_id)
-        ).group_by(Task.title) \
-         .order_by(func.sum(ServiceRecordTask.quantity).desc()).limit(6).all()
+        # ---- ۴: فعالیت سایت به تفکیک بستر ----
+        site_plat = (self.db.query(SiteDailyActivity.platform, func.count(SiteDailyActivity.id))
+                     .filter(SiteDailyActivity.report_date >= start,
+                             SiteDailyActivity.report_date <= end)
+                     .group_by(SiteDailyActivity.platform)
+                     .order_by(func.count(SiteDailyActivity.id).desc()).all())
+        hbar(self.fig_site, self.canvas_site, site_plat, "#0D9488")
 
-        self.fig_tasks.clear()
-        self.fig_tasks.set_facecolor(surface)
-        ax2 = self.fig_tasks.add_subplot(111)
-        ax2.set_facecolor(surface)
-        if task_data:
-            titles = [t[0] for t in task_data]
-            counts = [int(t[1] or 0) for t in task_data]
-            colors = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"]
-            ax2.pie(counts, labels=titles, autopct='%1.0f%%', startangle=140,
-                    colors=colors[:len(counts)],
-                    textprops={'fontsize': 9, 'color': text_color})
-        else:
-            ax2.text(0.5, 0.5, "داده‌ای در این بازه نیست", ha="center", va="center",
-                     color=text_color, transform=ax2.transAxes)
-        self.fig_tasks.tight_layout()
-        self.canvas_tasks.draw()
-
-        # ---- نمودار ۳: روند روزانه ----
-        trend_rows = in_range(
-            self.db.query(ServiceRecord.report_date, func.sum(ServiceRecordTask.quantity))
-            .join(ServiceRecordTask, ServiceRecord.id == ServiceRecordTask.service_record_id)
-        ).group_by(ServiceRecord.report_date).all()
-        by_day = {r[0]: int(r[1] or 0) for r in trend_rows if r[0] is not None}
+        # ---- ۵: روند روزانه (IT و سایت) ----
+        it_rows = (self.db.query(ServiceRecord.report_date, func.sum(ServiceRecordTask.quantity))
+                   .join(ServiceRecordTask, ServiceRecord.id == ServiceRecordTask.service_record_id)
+                   .filter(ServiceRecord.report_date >= start, ServiceRecord.report_date <= end))
+        it_rows = self._it_records(it_rows).group_by(ServiceRecord.report_date).all()
+        it_by_day = {r[0]: int(r[1] or 0) for r in it_rows if r[0] is not None}
+        site_rows = (self.db.query(SiteDailyActivity.report_date, func.count(SiteDailyActivity.id))
+                     .filter(SiteDailyActivity.report_date >= start,
+                             SiteDailyActivity.report_date <= end)
+                     .group_by(SiteDailyActivity.report_date).all())
+        site_by_day = {r[0]: int(r[1] or 0) for r in site_rows if r[0] is not None}
 
         days = [start + timedelta(days=i) for i in range((end - start).days + 1)]
-        values = [by_day.get(d, 0) for d in days]
+        it_vals = [it_by_day.get(d, 0) for d in days]
+        site_vals = [site_by_day.get(d, 0) for d in days]
 
-        self.fig_trend.clear()
-        self.fig_trend.set_facecolor(surface)
-        ax3 = self.fig_trend.add_subplot(111)
-        ax3.set_facecolor(surface)
+        self.fig_trend.clear(); self.fig_trend.set_facecolor(surface)
+        ax = self.fig_trend.add_subplot(111); ax.set_facecolor(surface)
         if days:
-            ax3.plot(range(len(days)), values, marker='o', markersize=3,
-                     linewidth=1.8, color=p["primary"])
-            ax3.fill_between(range(len(days)), values, alpha=0.12, color=p["primary"])
+            xs = range(len(days))
+            ax.plot(xs, it_vals, marker='o', markersize=3, linewidth=1.8,
+                    color=p["primary"], label="IT")
+            ax.fill_between(xs, it_vals, alpha=0.10, color=p["primary"])
+            ax.plot(xs, site_vals, marker='o', markersize=3, linewidth=1.8,
+                    color="#0D9488", label="سایت")
+            ax.fill_between(xs, site_vals, alpha=0.10, color="#0D9488")
             step = max(1, len(days) // 8)
             idx = list(range(0, len(days), step))
-            ax3.set_xticks(idx)
-            ax3.set_xticklabels([days[i].strftime("%m/%d") for i in idx],
-                                rotation=45, fontsize=8, ha="right")
-        ax3.set_facecolor(surface)
-        ax3.spines[['top', 'right']].set_visible(False)
-        ax3.spines[['left', 'bottom']].set_color(p["border"])
-        ax3.tick_params(labelsize=8, colors=text_color)
-        ax3.grid(axis='y', color=p["border"], linewidth=0.6, alpha=0.6)
-        self.fig_trend.tight_layout()
-        self.canvas_trend.draw()
+            ax.set_xticks(idx)
+            ax.set_xticklabels([days[i].strftime("%m/%d") for i in idx],
+                               rotation=45, fontsize=8, ha="right")
+            ax.legend(fontsize=8, facecolor=surface, edgecolor=p["border"], labelcolor=text_color)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.spines[['left', 'bottom']].set_color(p["border"])
+        ax.tick_params(labelsize=8, colors=text_color)
+        ax.grid(axis='y', color=p["border"], linewidth=0.6, alpha=0.6)
+        self.fig_trend.tight_layout(); self.canvas_trend.draw()

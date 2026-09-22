@@ -10,6 +10,54 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 from reports import summary
 
+
+def export_named_services_to_excel(filepath, lines, technician=None, date_range=None):
+    """خروجی اکسل مخصوصِ «خدمات نام‌دار» (ارتقا/اسمبل/نصب ویندوز و ...).
+
+    lines: لیستی از ServiceRecordTask که person_name دارند (هر ردیف یک مورد).
+    """
+    wb = openpyxl.Workbook()
+    ws = _new_sheet(wb, "خدمات نام‌دار", [
+        "ردیف", "تاریخ", "کارشناس", "خدمت", "نام فرد", "داخلی", "سیستم", "توضیح",
+    ], first=True)
+    for i, line in enumerate(lines, 1):
+        rec = line.record
+        _write_row(ws, i + 1, [
+            i,
+            summary.date_text(rec) if rec else "-",
+            (rec.technician_name_snapshot if rec else None) or "-",
+            line.task.title if line.task else "-",
+            line.person_name or "-",
+            line.person_extension or "-",
+            line.system_name or "-",
+            line.note or "-",
+        ], wrap_from=4)
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 28
+    ws.column_dimensions['E'].width = 22
+    ws.column_dimensions['H'].width = 32
+
+    # شیت جمع‌بندی بر اساس نوع خدمت
+    ws_sum = _new_sheet(wb, "جمع‌بندی", ["خدمت", "تعداد"])
+    totals = {}
+    for line in lines:
+        title = line.task.title if line.task else "؟"
+        totals[title] = totals.get(title, 0) + 1
+    rows = []
+    if technician:
+        rows.append(("کارشناس", technician.full_name))
+    if date_range:
+        rows.append(("بازه‌ی گزارش", f"{date_range[0]} تا {date_range[1]}"))
+    rows.append(("مجموع خدمات نام‌دار", len(lines)))
+    rows.append(("", ""))
+    rows.extend(sorted(totals.items(), key=lambda kv: kv[1], reverse=True))
+    for i, (key, value) in enumerate(rows, 2):
+        _write_row(ws_sum, i, [key, value], wrap_from=1)
+    ws_sum.column_dimensions['A'].width = 32
+    ws_sum.column_dimensions['B'].width = 14
+
+    wb.save(filepath)
+
 HEADER_FILL = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
 HEADER_FONT = Font(name="Tahoma", bold=True, color="FFFFFF")
 BORDER = Border(left=Side(style='thin'), right=Side(style='thin'),

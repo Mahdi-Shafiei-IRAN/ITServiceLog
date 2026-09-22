@@ -1,9 +1,9 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                                QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
-                               QMessageBox, QComboBox, QCheckBox, QInputDialog)
+                               QMessageBox, QCheckBox, QInputDialog)
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
-from database.models import Task, ServiceRecordTask, DEPARTMENTS, DEPT_IT
+from database.models import Task, ServiceRecordTask, DEPT_IT
 
 
 class TasksPage(QWidget):
@@ -20,20 +20,16 @@ class TasksPage(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(14)
 
-        title = QLabel("مدیریت خدمات و عملیات")
+        title = QLabel("مدیریت خدمات واحد IT")
         title.setObjectName("PageTitle")
         layout.addWidget(title)
 
-        # انتخاب بخش
-        dept_bar = QHBoxLayout()
-        self.cmb_dept = QComboBox()
-        for key, label in DEPARTMENTS:
-            self.cmb_dept.addItem(label, key)
-        self.cmb_dept.currentIndexChanged.connect(self.load_tasks)
-        dept_bar.addWidget(QLabel("بخش:"))
-        dept_bar.addWidget(self.cmb_dept)
-        dept_bar.addStretch()
-        layout.addLayout(dept_bar)
+        # خدمات فقط برای واحد IT مدیریت می‌شوند؛ خدمات واحد سایت به‌صورت ثابت
+        # در برنامه تعریف شده‌اند و نیازی به مدیریت از این‌جا ندارند.
+        note = QLabel("این بخش فقط خدمات واحد IT را مدیریت می‌کند. "
+                      "(خدمات واحد سایت به‌صورت ثابت تعریف شده‌اند.)")
+        note.setObjectName("Muted")
+        layout.addWidget(note)
 
         # فرم افزودن
         form_layout = QHBoxLayout()
@@ -87,11 +83,6 @@ class TasksPage(QWidget):
         btn_toggle_name.setCursor(Qt.PointingHandCursor)
         btn_toggle_name.clicked.connect(self.toggle_requires_name)
 
-        btn_move = QPushButton("انتقال به بخش دیگر")
-        btn_move.setProperty("variant", "ghost")
-        btn_move.setCursor(Qt.PointingHandCursor)
-        btn_move.clicked.connect(self.move_department)
-
         btn_delete = QPushButton("حذف")
         btn_delete.setProperty("variant", "danger")
         btn_delete.setCursor(Qt.PointingHandCursor)
@@ -100,7 +91,6 @@ class TasksPage(QWidget):
         action_bar.addStretch()
         action_bar.addWidget(btn_rename)
         action_bar.addWidget(btn_toggle_name)
-        action_bar.addWidget(btn_move)
         action_bar.addWidget(btn_delete)
         layout.addLayout(action_bar)
 
@@ -119,7 +109,7 @@ class TasksPage(QWidget):
 
     # ---------------- بارگذاری ----------------
     def current_department(self):
-        return self.cmb_dept.currentData() or DEPT_IT
+        return DEPT_IT
 
     def load_tasks(self):
         dept = self.current_department()
@@ -263,30 +253,6 @@ class TasksPage(QWidget):
         state = "تک‌تک با نام فرد" if task.requires_name else "شمارش کلی روزانه"
         QMessageBox.information(self, "انجام شد", f"«{task.title}» از این پس {state} ثبت می‌شود.")
         self.load_tasks()
-
-    def move_department(self):
-        task = self._selected_task()
-        if not task:
-            return
-        if task.parent_task_id:
-            QMessageBox.information(
-                self, "توجه",
-                "فقط دسته‌های اصلی قابل انتقال هستند؛ زیرمجموعه‌ها همراه پدرشان منتقل می‌شوند.")
-            return
-        labels = [label for _, label in DEPARTMENTS]
-        keys = [key for key, _ in DEPARTMENTS]
-        current = keys.index(task.department or DEPT_IT)
-        choice, ok = QInputDialog.getItem(self, "انتقال بخش", "بخش مقصد:", labels, current, False)
-        if not ok:
-            return
-        self._set_department_recursive(task, keys[labels.index(choice)])
-        self.db.commit()
-        self.load_tasks()
-
-    def _set_department_recursive(self, task, dept):
-        task.department = dept
-        for sub in task.sub_tasks:
-            self._set_department_recursive(sub, dept)
 
     def delete_task(self):
         task = self._selected_task()

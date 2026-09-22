@@ -49,7 +49,7 @@ def main():
         login = LoginWindow()
         if login.exec() == QDialog.Accepted:
             window = MainWindow(login.authenticated_user)
-            window.showMaximized()
+            window.show()  # در کوچک‌ترین اندازه باز می‌شود؛ کاربر خودش می‌تواند بزرگ کند
             app.exec() # برنامه اینجا منتظر می‌ماند تا پنجره بسته شود
             
             # بررسی اینکه کاربر دکمه خروج را زده یا کل برنامه را بسته است

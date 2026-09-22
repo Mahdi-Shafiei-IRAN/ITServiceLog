@@ -5,6 +5,7 @@ from database.connection import SessionLocal
 from ui.daily_entry_page import DailyEntryPage
 from ui.site_page import SitePage
 from ui.site_reports_page import SiteReportsPage
+from ui.named_services_page import NamedServicesPage
 from ui.my_reports_page import MyReportsPage
 # DashboardPage به‌صورت تنبل (فقط هنگام باز شدن تبِ داشبورد) import می‌شود تا
 # کتابخانه‌ی سنگین matplotlib در زمان اجرای برنامه بارگذاری نشود و باز شدن سریع‌تر باشد.
@@ -24,7 +25,9 @@ class MainWindow(QMainWindow):
         self.tab_dashboard = None
         
         self.setWindowTitle(f"IT Service Log - کاربر: {self.technician.full_name} ({self.technician.role})")
-        self.setMinimumSize(1100, 768)
+        # کوچک‌ترین اندازه‌ی ممکن که رابط هنوز قابل‌استفاده بماند؛ قابل تغییر اندازه است
+        self.setMinimumSize(820, 560)
+        self.resize(940, 620)
         self.setup_ui()
 
     def setup_ui(self):
@@ -74,6 +77,10 @@ class MainWindow(QMainWindow):
             self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
             self.tabs.addTab(self.tab_my_reports,
                              "گزارش‌های من (IT)" if has_site else "گزارش‌های من")
+            # خدمات نام‌دار (ارتقا/اسمبل/نصب ویندوز) به‌صورت گزارشِ جدا و برجسته
+            self.tab_my_named = NamedServicesPage(self.db_session,
+                                                  technician=self.technician, admin=False)
+            self.tabs.addTab(self.tab_my_named, "خدمات نام‌دارِ من")
         if has_site:
             self.tab_my_site = SiteReportsPage(self.db_session, technician=self.technician,
                                                admin=False)
@@ -83,6 +90,8 @@ class MainWindow(QMainWindow):
         if self.technician.role == "Administrator":
             self.tab_admin_reports = AdminReportsPage(self.db_session)
             self.tabs.addTab(self.tab_admin_reports, "گزارشات واحد IT (Excel)")
+            self.tab_admin_named = NamedServicesPage(self.db_session, technician=None, admin=True)
+            self.tabs.addTab(self.tab_admin_named, "گزارش خدمات نام‌دار")
             self.tab_admin_site = SiteReportsPage(self.db_session, technician=None, admin=True)
             self.tabs.addTab(self.tab_admin_site, "گزارشات واحد سایت (Excel)")
             # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم

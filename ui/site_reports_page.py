@@ -1,22 +1,24 @@
 """گزارش‌های واحد سایت — جدا از واحد IT تا کارِ بخش‌ها قاطی نشود.
 
-یک صفحه با دو تبِ داخلی («گزارش روزانه» و «پایش شبکه‌ها») که ردیف‌های ثبت‌شده
-را نمایش، فیلتر و به اکسل (همان دو شیتِ فایل مدیریت) خروجی می‌گیرد.
+دو تبِ داخلی («گزارش روزانه» و «پایش شبکه‌ها») با انتخاب، ویرایش، حذف و خروجی
+اکسل (همان دو شیتِ فایل مدیریت) — دقیقاً مثل امکاناتِ واحد IT.
 
   • حالت شخصی (admin=False): فقط ردیف‌های همان کارشناس.
   • حالت مدیر (admin=True): همه‌ی کارشناسان + فیلترِ کارشناس.
 """
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
                                QComboBox, QDateEdit, QFileDialog, QMessageBox,
-                               QAbstractItemView, QTabWidget)
+                               QAbstractItemView, QTabWidget, QCheckBox)
 from PySide6.QtCore import Qt, QDate
 from sqlalchemy.orm import Session
 
 from database.models import (SiteDailyActivity, SiteNetworkStat, Technician,
                              SITE_PLATFORMS)
+from ui.site_page import DAILY_COLUMNS, NETWORK_COLUMNS
+from ui.site_row_edit_dialog import SiteRowEditDialog
 
 _PERIODS = [
     ("همه‌ی زمان‌ها", "all"), ("امروز", "today"), ("دیروز", "yesterday"),
@@ -53,7 +55,6 @@ class SiteReportsPage(QWidget):
         title.setObjectName("PageTitle")
         layout.addWidget(title)
 
-        # --- ردیف فیلترها ---
         bar = QHBoxLayout()
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("جستجو در بستر، شرح، وضعیت، توضیحات...")
@@ -78,45 +79,52 @@ class SiteReportsPage(QWidget):
             bar.addWidget(self.cmb_tech, 1)
         layout.addLayout(bar)
 
-        # --- ردیف بازه‌ی زمانی + عملیات ---
         bar2 = QHBoxLayout()
         self.cmb_period = QComboBox()
         for label, key in _PERIODS:
             self.cmb_period.addItem(label, key)
         self.cmb_period.currentIndexChanged.connect(self._period_changed)
-
         self.date_from = QDateEdit(); self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy/MM/dd")
         self.date_from.setDate(QDate.currentDate().addDays(-30))
         self.date_from.dateChanged.connect(self.apply_filters); self.date_from.setEnabled(False)
-
         self.date_to = QDateEdit(); self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy/MM/dd")
         self.date_to.setDate(QDate.currentDate())
         self.date_to.dateChanged.connect(self.apply_filters); self.date_to.setEnabled(False)
-
-        bar2.addWidget(QLabel("بازه‌ی زمانی:"))
-        bar2.addWidget(self.cmb_period)
+        bar2.addWidget(QLabel("بازه‌ی زمانی:")); bar2.addWidget(self.cmb_period)
         bar2.addWidget(QLabel("از:")); bar2.addWidget(self.date_from)
         bar2.addWidget(QLabel("تا:")); bar2.addWidget(self.date_to)
         bar2.addStretch()
-
-        btn_refresh = QPushButton("بروزرسانی")
-        btn_refresh.setProperty("variant", "ghost")
-        btn_refresh.setCursor(Qt.PointingHandCursor)
-        btn_refresh.clicked.connect(self.load_data)
-        btn_export = QPushButton("خروجی اکسل (همه‌ی نمایش)")
-        btn_export.setProperty("variant", "success")
-        btn_export.setCursor(Qt.PointingHandCursor)
-        btn_export.clicked.connect(self.export_excel)
-        bar2.addWidget(btn_refresh)
-        bar2.addWidget(btn_export)
         layout.addLayout(bar2)
 
-        # --- دو تبِ داخلی ---
+        # نوار عملیات (روی تبِ فعال اثر می‌گذارد)
+        action = QHBoxLayout()
+        self.chk_all = QCheckBox("انتخاب همه")
+        self.chk_all.stateChanged.connect(self._toggle_all)
+        action.addWidget(self.chk_all)
+        action.addStretch()
+        btn_refresh = QPushButton("بروزرسانی"); btn_refresh.setProperty("variant", "ghost")
+        btn_refresh.setCursor(Qt.PointingHandCursor); btn_refresh.clicked.connect(self.load_data)
+        btn_edit = QPushButton("ویرایش"); btn_edit.setCursor(Qt.PointingHandCursor)
+        btn_edit.clicked.connect(self.edit_selected)
+        btn_del = QPushButton("حذف انتخاب‌شده‌ها"); btn_del.setProperty("variant", "danger")
+        btn_del.setCursor(Qt.PointingHandCursor); btn_del.clicked.connect(self.delete_checked)
+        btn_exp_sel = QPushButton("خروجی از انتخاب‌شده‌ها"); btn_exp_sel.setCursor(Qt.PointingHandCursor)
+        btn_exp_sel.clicked.connect(self.export_checked)
+        btn_exp_all = QPushButton("خروجی اکسل (همه‌ی نمایش)")
+        btn_exp_all.setProperty("variant", "success"); btn_exp_all.setCursor(Qt.PointingHandCursor)
+        btn_exp_all.clicked.connect(self.export_displayed)
+        for b in (btn_refresh, btn_edit, btn_del, btn_exp_sel, btn_exp_all):
+            action.addWidget(b)
+        layout.addLayout(action)
+
         self.inner = QTabWidget()
+        self.inner.currentChanged.connect(lambda *_: self.chk_all.setChecked(False))
         self.tbl_daily = self._make_table(self._daily_headers())
+        self.tbl_daily.doubleClicked.connect(lambda *_: self.edit_selected())
         self.tbl_net = self._make_table(self._net_headers())
+        self.tbl_net.doubleClicked.connect(lambda *_: self.edit_selected())
         self.inner.addTab(self._wrap(self.tbl_daily, "lbl_daily"), "گزارش روزانه")
         self.inner.addTab(self._wrap(self.tbl_net, "lbl_net"), "پایش شبکه‌ها")
         layout.addWidget(self.inner, 1)
@@ -126,8 +134,7 @@ class SiteReportsPage(QWidget):
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 8, 0, 0)
         lay.addWidget(table, 1)
-        lbl = QLabel("")
-        lbl.setObjectName("Muted")
+        lbl = QLabel(""); lbl.setObjectName("Muted")
         setattr(self, label_attr, lbl)
         lay.addWidget(lbl)
         return w
@@ -147,13 +154,13 @@ class SiteReportsPage(QWidget):
         return t
 
     def _daily_headers(self):
-        base = ["ردیف", "تاریخ"]
+        base = ["انتخاب", "ردیف", "تاریخ"]
         if self.admin:
             base.append("کارشناس")
         return base + ["نام بستر", "نوع فعالیت", "شرح کار انجام‌شده", "وضعیت", "توضیحات"]
 
     def _net_headers(self):
-        base = ["ردیف", "تاریخ"]
+        base = ["انتخاب", "ردیف", "تاریخ"]
         if self.admin:
             base.append("کارشناس")
         return base + ["نام بستر", "دنبال‌کننده/عضو", "بازدید", "تعامل", "پست",
@@ -249,21 +256,30 @@ class SiteReportsPage(QWidget):
         platform = self.cmb_platform.currentData()
         tech_id = self.cmb_tech.currentData() if (self.admin and self.cmb_tech) else None
         rng = self._date_range()
-
         self.daily_shown = [r for r in self.daily_all
                             if self._match(r, words, platform, tech_id, rng)]
         self.net_shown = [r for r in self.net_all
                           if self._match(r, words, platform, tech_id, rng)]
+        self.chk_all.blockSignals(True); self.chk_all.setChecked(False); self.chk_all.blockSignals(False)
         self._fill_daily()
         self._fill_net()
 
     def _dt(self, d):
         return d.strftime("%Y/%m/%d") if d else "-"
 
+    def _checkbox_item(self):
+        it = QTableWidgetItem()
+        it.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        it.setCheckState(Qt.Unchecked)
+        it.setTextAlignment(Qt.AlignCenter)
+        return it
+
     def _set_row(self, table, row, values):
-        for col, val in enumerate(values):
+        table.setItem(row, 0, self._checkbox_item())
+        for i, val in enumerate(values):
+            col = i + 1
             item = QTableWidgetItem("-" if val in (None, "") else str(val))
-            last = (col == len(values) - 1)
+            last = (col == len(values))
             item.setTextAlignment((Qt.AlignLeft if last else Qt.AlignCenter) | Qt.AlignVCenter)
             table.setItem(row, col, item)
 
@@ -290,19 +306,83 @@ class SiteReportsPage(QWidget):
             self._set_row(t, row, vals)
         self.lbl_net.setText(f"تعداد ردیف‌های پایش شبکه‌ها: {len(self.net_shown)}")
 
-    # ------------------------------------------------------------ خروجی
-    def export_excel(self):
+    # ------------------------------------------------------------ تبِ فعال
+    def _active(self):
+        """(جدول, لیستِ نمایش, ستون‌ها) برای تبِ فعال."""
+        if self.inner.currentIndex() == 0:
+            return self.tbl_daily, self.daily_shown, DAILY_COLUMNS
+        return self.tbl_net, self.net_shown, NETWORK_COLUMNS
+
+    def _toggle_all(self, state):
+        table, _, _ = self._active()
+        check = Qt.Checked if state == Qt.Checked.value else Qt.Unchecked
+        for row in range(table.rowCount()):
+            it = table.item(row, 0)
+            if it:
+                it.setCheckState(check)
+
+    def _checked(self, table, shown):
+        out = []
+        for row in range(table.rowCount()):
+            it = table.item(row, 0)
+            if it and it.checkState() == Qt.Checked and row < len(shown):
+                out.append(shown[row])
+        return out
+
+    # ------------------------------------------------------------ عملیات
+    def edit_selected(self):
+        table, shown, columns = self._active()
+        row = table.currentRow()
+        if row < 0 or row >= len(shown):
+            QMessageBox.information(self, "توجه", "ابتدا یک ردیف را انتخاب کنید.")
+            return
+        title = "ویرایش ردیف گزارش روزانه" if columns is DAILY_COLUMNS else "ویرایش ردیف پایش شبکه‌ها"
+        dlg = SiteRowEditDialog(self.db, shown[row], columns, title=title, parent=self)
+        if dlg.exec():
+            self.load_data()
+
+    def delete_checked(self):
+        table, shown, _ = self._active()
+        targets = self._checked(table, shown)
+        if not targets:
+            QMessageBox.information(self, "توجه", "هیچ ردیفی انتخاب نشده است.")
+            return
+        confirm = QMessageBox.question(
+            self, "تأیید حذف",
+            f"آیا {len(targets)} ردیفِ انتخاب‌شده حذف شود؟ این عملیات قابل بازگشت نیست.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if confirm != QMessageBox.Yes:
+            return
+        for r in targets:
+            self.db.delete(r)
+        self.db.commit()
+        QMessageBox.information(self, "موفق", f"{len(targets)} ردیف حذف شد.")
+        self.load_data()
+
+    def export_checked(self):
+        daily = self._checked(self.tbl_daily, self.daily_shown)
+        net = self._checked(self.tbl_net, self.net_shown)
+        if not daily and not net:
+            QMessageBox.information(
+                self, "توجه",
+                "هیچ ردیفی انتخاب نشده است. (در هر دو تب می‌توانید ردیف تیک بزنید.)")
+            return
+        self._export(daily, net, "Site_Reports_Selected.xlsx")
+
+    def export_displayed(self):
         if not self.daily_shown and not self.net_shown:
             QMessageBox.warning(self, "خطا", "ردیفی برای خروجی گرفتن وجود ندارد.")
             return
-        default = "Site_Reports.xlsx"
+        self._export(self.daily_shown, self.net_shown, "Site_Reports.xlsx")
+
+    def _export(self, daily_rows, net_rows, default_name):
         filepath, _ = QFileDialog.getSaveFileName(
-            self, "ذخیره فایل اکسل", default, "Excel Files (*.xlsx)")
+            self, "ذخیره فایل اکسل", default_name, "Excel Files (*.xlsx)")
         if not filepath:
             return
         from reports.site_excel_exporter import export_site_to_excel
         try:
-            export_site_to_excel(filepath, self.daily_shown, self.net_shown,
+            export_site_to_excel(filepath, daily_rows, net_rows,
                                  technician=self.technician if not self.admin else None)
             QMessageBox.information(self, "موفق", f"فایل اکسل ذخیره شد:\n{filepath}")
         except Exception as e:
