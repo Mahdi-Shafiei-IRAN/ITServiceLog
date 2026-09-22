@@ -10,6 +10,16 @@ DEPT_SITE = "SITE"
 DEPARTMENTS = [(DEPT_IT, "واحد IT"), (DEPT_SITE, "واحد سایت")]
 DEPT_LABELS = dict(DEPARTMENTS)
 
+# ---------------------------------------------------------------------------
+# مقادیر ثابتِ واحد سایت (دقیقاً مطابق فهرست‌های کشویی فایل «گزارش مدیریت»)
+# این‌ها منبعِ یکتای گزینه‌های کشویی در دو تبِ واحد سایت هستند.
+# ---------------------------------------------------------------------------
+SITE_PLATFORMS = ["سایت", "اینستاگرام", "ایتا", "بله", "تلگرام", "واتساپ", "آپارات", "سایر"]
+SITE_ACTIVITY_TYPES = ["تولید محتوا", "انتشار محتوا", "پایش", "پاسخگویی",
+                       "طراحی گرافیک", "بروزرسانی سایت", "تبلیغات", "گزارش گیری"]
+SITE_STATUSES = ["در حال انجام", "انجام شد", "در انتظار تأیید", "منتظر اطلاعات", "لغو شد"]
+SITE_PAGE_STATUSES = ["فعال", "نیمه‌فعال", "غیرفعال"]
+
 
 class Technician(Base):
     __tablename__ = 'technicians'
@@ -114,3 +124,48 @@ class ServiceRecordTask(Base):
 
     record = relationship("ServiceRecord", back_populates="tasks")
     task = relationship("Task")
+
+
+# ===========================================================================
+# واحد سایت — دو جدولِ مستقل مطابق دو شیتِ فایل «گزارش مدیریت»
+# (شیت ۱: گزارش روزانه، شیت ۲: پایش شبکه‌ها)
+# هر ردیف مستقیماً یک سطر از اکسل است؛ به تاریخ و کارشناسِ ثبت‌کننده گره خورده.
+# ===========================================================================
+class SiteDailyActivity(Base):
+    """یک ردیف از «گزارش روزانه»ی واحد سایت (شیت اولِ فایل مدیریت)."""
+    __tablename__ = 'site_daily_activities'
+    id = Column(Integer, primary_key=True)
+    technician_id = Column(Integer, ForeignKey('technicians.id'), nullable=False)
+    technician_name_snapshot = Column(String(100))
+    report_date = Column(Date, default=date.today, index=True)
+
+    platform = Column(String(50))        # نام بستر (کشویی)
+    activity_type = Column(String(50))   # نوع فعالیت (کشویی)
+    description = Column(String(500))     # شرح کار انجام‌شده
+    status = Column(String(50))           # وضعیت (کشویی)
+    note = Column(String(500))            # توضیحات
+    created_at = Column(DateTime, default=datetime.now)
+
+    technician = relationship("Technician")
+
+
+class SiteNetworkStat(Base):
+    """یک ردیف از «پایش شبکه‌ها»ی واحد سایت (شیت دومِ فایل مدیریت)."""
+    __tablename__ = 'site_network_stats'
+    id = Column(Integer, primary_key=True)
+    technician_id = Column(Integer, ForeignKey('technicians.id'), nullable=False)
+    technician_name_snapshot = Column(String(100))
+    report_date = Column(Date, default=date.today, index=True)
+
+    platform = Column(String(50))         # نام بستر (کشویی)
+    followers = Column(Integer)           # تعداد دنبال‌کننده/عضو
+    impressions = Column(Integer)         # بازدید/Impression
+    engagement = Column(Integer)          # تعامل/Engagement
+    posts = Column(Integer)               # تعداد پست
+    stories = Column(Integer)             # تعداد استوری
+    growth = Column(String(50))           # رشد نسبت به قبل (متن آزاد: مثلاً +۵٪)
+    page_status = Column(String(50))      # وضعیت صفحه (کشویی)
+    note = Column(String(500))            # توضیحات
+    created_at = Column(DateTime, default=datetime.now)
+
+    technician = relationship("Technician")

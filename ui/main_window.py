@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (QMainWindow, QTabWidget, QVBoxLayout, QHBoxLayout
 from PySide6.QtCore import Qt
 from database.connection import SessionLocal
 from ui.daily_entry_page import DailyEntryPage
+from ui.site_page import SitePage
 from ui.my_reports_page import MyReportsPage
 # DashboardPage به‌صورت تنبل (فقط هنگام باز شدن تبِ داشبورد) import می‌شود تا
 # کتابخانه‌ی سنگین matplotlib در زمان اجرای برنامه بارگذاری نشود و باز شدن سریع‌تر باشد.
@@ -10,7 +11,7 @@ from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
 from ui.theme import set_variant, make_theme_toggle
-from database.models import DEPT_LABELS
+from database.models import DEPT_LABELS, DEPT_SITE
 
 class MainWindow(QMainWindow):
     def __init__(self, current_technician):
@@ -51,12 +52,17 @@ class MainWindow(QMainWindow):
 
         self.tabs.setCornerWidget(corner, Qt.TopLeftCorner)  # گوشه چپ (چون راست‌چین است)
         
-        # --- یک تب ثبت روزانه برای هر بخشی که کاربر به آن دسترسی دارد ---
+        # --- یک تب ثبت برای هر بخشی که کاربر به آن دسترسی دارد ---
+        # واحد IT: برگه‌ی تیکی/تعدادی. واحد سایت: دو تبِ جدولی مطابق فایل مدیریت.
         self.entry_tabs = {}
         for dept in self.technician.departments():
-            page = DailyEntryPage(self.db_session, self.technician, dept)
+            if dept == DEPT_SITE:
+                page = SitePage(self.db_session, self.technician)
+                self.tabs.addTab(page, "واحد سایت")
+            else:
+                page = DailyEntryPage(self.db_session, self.technician, dept)
+                self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
-            self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
         
         self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
         self.tabs.addTab(self.tab_my_reports, "گزارش‌های من")
