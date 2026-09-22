@@ -7,6 +7,7 @@ from ui.site_page import SitePage
 from ui.site_reports_page import SiteReportsPage
 from ui.named_services_page import NamedServicesPage
 from ui.my_reports_page import MyReportsPage
+from ui.report_tabs import ReportTabs
 # DashboardPage به‌صورت تنبل (فقط هنگام باز شدن تبِ داشبورد) import می‌شود تا
 # کتابخانه‌ی سنگین matplotlib در زمان اجرای برنامه بارگذاری نشود و باز شدن سریع‌تر باشد.
 from ui.tasks_page import TasksPage
@@ -25,9 +26,7 @@ class MainWindow(QMainWindow):
         self.tab_dashboard = None
         
         self.setWindowTitle(f"IT Service Log - کاربر: {self.technician.full_name} ({self.technician.role})")
-        # کوچک‌ترین اندازه‌ی ممکن که رابط هنوز قابل‌استفاده بماند؛ قابل تغییر اندازه است
-        self.setMinimumSize(820, 560)
-        self.resize(940, 620)
+        self.setMinimumSize(1100, 768)
         self.setup_ui()
 
     def setup_ui(self):
@@ -68,32 +67,42 @@ class MainWindow(QMainWindow):
                 self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
         
-        # --- گزارش‌های شخصی: IT و سایت جدا از هم تا کارِ بخش‌ها قاطی نشود ---
+        # --- «گزارش‌های من»: یک تب با تب‌های داخلی (IT / سایت / نام‌دار) ---
         depts = self.technician.departments()
         has_it = DEPT_IT in depts
         has_site = DEPT_SITE in depts
 
+        my_children = []
         if has_it:
             self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
-            self.tabs.addTab(self.tab_my_reports,
-                             "گزارش‌های من (IT)" if has_site else "گزارش‌های من")
-            # خدمات نام‌دار (ارتقا/اسمبل/نصب ویندوز) به‌صورت گزارشِ جدا و برجسته
-            self.tab_my_named = NamedServicesPage(self.db_session,
-                                                  technician=self.technician, admin=False)
-            self.tabs.addTab(self.tab_my_named, "خدمات نام‌دارِ من")
+            my_children.append(("IT", self.tab_my_reports))
         if has_site:
             self.tab_my_site = SiteReportsPage(self.db_session, technician=self.technician,
                                                admin=False)
-            self.tabs.addTab(self.tab_my_site, "گزارش‌های من (سایت)")
+            my_children.append(("سایت", self.tab_my_site))
+        if has_it:
+            self.tab_my_named = NamedServicesPage(self.db_session,
+                                                  technician=self.technician, admin=False)
+            my_children.append(("نام‌دار", self.tab_my_named))
+        if my_children:
+            self.tab_my = ReportTabs(my_children)
+            self.tabs.addTab(self.tab_my, "گزارش‌های من")
 
         # --- تب‌های مدیر ---
         if self.technician.role == "Administrator":
+            # گزارشات کلی IT با دو تب داخلی: تعدادی و نام‌دار
             self.tab_admin_reports = AdminReportsPage(self.db_session)
-            self.tabs.addTab(self.tab_admin_reports, "گزارشات واحد IT (Excel)")
             self.tab_admin_named = NamedServicesPage(self.db_session, technician=None, admin=True)
-            self.tabs.addTab(self.tab_admin_named, "گزارش خدمات نام‌دار")
+            self.tab_admin_it = ReportTabs([
+                ("تعدادی", self.tab_admin_reports),
+                ("نام‌دار", self.tab_admin_named),
+            ])
+            self.tabs.addTab(self.tab_admin_it, "گزارشات کلی IT")
+
+            # گزارشات کلی واحد سایت (خودش دو تب داخلی روزانه/پایش دارد)
             self.tab_admin_site = SiteReportsPage(self.db_session, technician=None, admin=True)
-            self.tabs.addTab(self.tab_admin_site, "گزارشات واحد سایت (Excel)")
+            self.tabs.addTab(self.tab_admin_site, "گزارشات کلی واحد سایت")
+
             # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم
             self.tab_dashboard = None
             self._dash_index = self.tabs.addTab(QWidget(), "داشبورد مدیریت")

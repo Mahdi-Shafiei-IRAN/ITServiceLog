@@ -149,10 +149,13 @@ class DailyEntryPage(QWidget):
             # ارتفاع ردیف‌ها را بالا می‌بریم تا کمبو/ورودی‌ها بریده نشوند و متن دیده شود
             self.named_table.verticalHeader().setDefaultSectionSize(44)
             header = self.named_table.horizontalHeader()
-            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)  # خدمت
-            header.setSectionResizeMode(1, QHeaderView.Stretch)           # نام فرد
-            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # داخلی
+            # ستون «خدمت» عنوان‌های بلند دارد؛ کشسان باشد تا نام کامل دیده شود
+            header.setSectionResizeMode(0, QHeaderView.Stretch)           # خدمت
+            header.setSectionResizeMode(1, QHeaderView.Interactive)       # نام فرد
+            header.setSectionResizeMode(2, QHeaderView.Interactive)       # داخلی
             header.setSectionResizeMode(3, QHeaderView.Stretch)           # توضیح
+            self.named_table.setColumnWidth(1, 160)
+            self.named_table.setColumnWidth(2, 90)
             named_layout.addWidget(self.named_table)
 
             self.lbl_named_hint = QLabel("")
