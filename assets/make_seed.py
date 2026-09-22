@@ -18,7 +18,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SEED = os.path.join(HERE, "seed.sqlite")
 
 # جدول‌هایی که نباید در seed باشند (داده‌ی هر سیستم مخصوص خودش است)
-STRIP_TABLES = ["service_record_tasks", "service_records"]
+STRIP_TABLES = ["service_record_tasks", "service_records",
+                "site_daily_activities", "site_network_stats"]
 
 
 def source_db():

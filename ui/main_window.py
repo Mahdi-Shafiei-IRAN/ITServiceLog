@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from database.connection import SessionLocal
 from ui.daily_entry_page import DailyEntryPage
 from ui.site_page import SitePage
+from ui.site_reports_page import SiteReportsPage
 from ui.my_reports_page import MyReportsPage
 # DashboardPage به‌صورت تنبل (فقط هنگام باز شدن تبِ داشبورد) import می‌شود تا
 # کتابخانه‌ی سنگین matplotlib در زمان اجرای برنامه بارگذاری نشود و باز شدن سریع‌تر باشد.
@@ -11,7 +12,7 @@ from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
 from ui.theme import set_variant, make_theme_toggle
-from database.models import DEPT_LABELS, DEPT_SITE
+from database.models import DEPT_LABELS, DEPT_SITE, DEPT_IT
 
 class MainWindow(QMainWindow):
     def __init__(self, current_technician):
@@ -64,13 +65,26 @@ class MainWindow(QMainWindow):
                 self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
         
-        self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
-        self.tabs.addTab(self.tab_my_reports, "گزارش‌های من")
+        # --- گزارش‌های شخصی: IT و سایت جدا از هم تا کارِ بخش‌ها قاطی نشود ---
+        depts = self.technician.departments()
+        has_it = DEPT_IT in depts
+        has_site = DEPT_SITE in depts
+
+        if has_it:
+            self.tab_my_reports = MyReportsPage(self.db_session, self.technician)
+            self.tabs.addTab(self.tab_my_reports,
+                             "گزارش‌های من (IT)" if has_site else "گزارش‌های من")
+        if has_site:
+            self.tab_my_site = SiteReportsPage(self.db_session, technician=self.technician,
+                                               admin=False)
+            self.tabs.addTab(self.tab_my_site, "گزارش‌های من (سایت)")
 
         # --- تب‌های مدیر ---
         if self.technician.role == "Administrator":
             self.tab_admin_reports = AdminReportsPage(self.db_session)
-            self.tabs.addTab(self.tab_admin_reports, "جستجو و گزارشات (Excel)")
+            self.tabs.addTab(self.tab_admin_reports, "گزارشات واحد IT (Excel)")
+            self.tab_admin_site = SiteReportsPage(self.db_session, technician=None, admin=True)
+            self.tabs.addTab(self.tab_admin_site, "گزارشات واحد سایت (Excel)")
             # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم
             self.tab_dashboard = None
             self._dash_index = self.tabs.addTab(QWidget(), "داشبورد مدیریت")
