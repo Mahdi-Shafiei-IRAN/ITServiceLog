@@ -32,6 +32,8 @@ class Technician(Base):
     # بخش کاری کاربر: IT ، SITE یا BOTH (دسترسی به هر دو صفحه)
     department = Column(String(10), default=DEPT_IT)
     is_active = Column(Boolean, default=True)
+    # اجازه‌ی ثبت در تبِ «کارهای شاخص IT» (مستقل از نقش ادمین)
+    can_log_key_activities = Column(Boolean, default=False)
 
     def departments(self):
         """لیست بخش‌هایی که این کاربر اجازه‌ی ثبت در آن‌ها را دارد."""
@@ -169,3 +171,64 @@ class SiteNetworkStat(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     technician = relationship("Technician")
+
+
+# ===========================================================================
+# کارهای شاخص IT — کارهای آزاد (بدون فهرست خدمات از پیش تعریف‌شده)
+# هر کار یک‌روزه یا پروژه‌ی چندهفته‌ای است و تاریخچه‌ی به‌روزرسانی دارد.
+# ===========================================================================
+KEY_STATUS_PLANNED = "برنامه‌ریزی"
+KEY_STATUS_IN_PROGRESS = "در حال انجام"
+KEY_STATUS_DONE = "انجام شد"
+KEY_STATUS_ON_HOLD = "متوقف"
+KEY_STATUS_CANCELLED = "لغو شد"
+KEY_STATUSES = [KEY_STATUS_PLANNED, KEY_STATUS_IN_PROGRESS, KEY_STATUS_DONE,
+                KEY_STATUS_ON_HOLD, KEY_STATUS_CANCELLED]
+
+KEY_PRIORITY_NORMAL = "عادی"
+KEY_PRIORITY_HIGH = "مهم"
+KEY_PRIORITY_TOP = "خیلی مهم"
+KEY_PRIORITIES = [KEY_PRIORITY_NORMAL, KEY_PRIORITY_HIGH, KEY_PRIORITY_TOP]
+
+# فقط پیشنهاد است؛ کاربر هر دسته‌ی دیگری را هم می‌تواند تایپ کند
+KEY_CATEGORIES_DEFAULT = ["شبکه", "سرور", "امنیت", "نرم‌افزار", "سخت‌افزار",
+                          "خرید و تأمین", "آموزش", "سایر"]
+
+
+class KeyActivity(Base):
+    """یک «کار شاخص» که صاحبش آزادانه ثبت و در طول زمان به‌روز می‌کند."""
+    __tablename__ = 'key_activities'
+    id = Column(Integer, primary_key=True)
+    technician_id = Column(Integer, ForeignKey('technicians.id'), nullable=False, index=True)
+    technician_name_snapshot = Column(String(100))
+
+    title = Column(String(200), nullable=False)
+    category = Column(String(50))                    # متن آزاد با پیشنهاد
+    priority = Column(String(20), default=KEY_PRIORITY_NORMAL)
+    status = Column(String(30), default=KEY_STATUS_IN_PROGRESS)
+    progress = Column(Integer, default=0)            # ۰ تا ۱۰۰
+    start_date = Column(Date, nullable=False, default=date.today, index=True)
+    end_date = Column(Date, nullable=True)           # با «انجام شد» خودکار پر می‌شود
+    description = Column(String(1000))               # شرح کار
+    result = Column(String(1000))                    # نتیجه / دستاورد
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now)
+
+    technician = relationship("Technician")
+    updates = relationship("KeyActivityUpdate", back_populates="activity",
+                           cascade="all, delete-orphan")
+
+
+class KeyActivityUpdate(Base):
+    """یک به‌روزرسانی در خط زمانیِ یک کار شاخص (پیشرفت و وضعیت پس از آن)."""
+    __tablename__ = 'key_activity_updates'
+    id = Column(Integer, primary_key=True)
+    activity_id = Column(Integer, ForeignKey('key_activities.id'), nullable=False, index=True)
+    update_date = Column(Date, nullable=False, default=date.today, index=True)
+    text = Column(String(1000), nullable=False)
+    progress = Column(Integer)                       # درصد پیشرفت پس از این به‌روزرسانی
+    status = Column(String(30))                      # وضعیت پس از این به‌روزرسانی
+    author_name_snapshot = Column(String(100))
+    created_at = Column(DateTime, default=datetime.now)
+
+    activity = relationship("KeyActivity", back_populates="updates")

@@ -56,6 +56,7 @@ _NEW_COLUMNS = [
     ("service_record_tasks", "person_extension", "VARCHAR(20)"),
     ("service_record_tasks", "system_name", "VARCHAR(100)"),
     ("service_record_tasks", "note", "VARCHAR(300)"),
+    ("technicians", "can_log_key_activities", "BOOLEAN"),
 ]
 
 
@@ -95,6 +96,11 @@ def _migrate():
         if ("technicians", "department") in added:
             conn.execute(text(
                 "UPDATE technicians SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
+        if ("technicians", "can_log_key_activities") in added:
+            # پارامتر بولی (نه عدد ۰) تا روی PostgreSQL هم درست کار کند
+            conn.execute(text(
+                "UPDATE technicians SET can_log_key_activities = :f "
+                "WHERE can_log_key_activities IS NULL"), {"f": False})
         if ("service_records", "department") in added:
             conn.execute(text(
                 "UPDATE service_records SET department = :d WHERE department IS NULL"), {"d": DEPT_IT})
