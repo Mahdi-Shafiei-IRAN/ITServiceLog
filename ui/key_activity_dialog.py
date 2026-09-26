@@ -172,9 +172,6 @@ class KeyActivityDialog(QDialog):
         status = self.cmb_status.currentText()
         progress = self.spn_progress.value()
         end = self.date_end.date().toPython() if self.chk_has_end.isChecked() else None
-        if status == KEY_STATUS_DONE:  # همان قاعده‌ی apply_status
-            progress = 100
-            end = end or date.today()
         return {
             "title": self.txt_title.text().strip(),
             "category": self.cmb_category.currentText().strip() or None,
@@ -200,8 +197,11 @@ class KeyActivityDialog(QDialog):
                 act = KeyActivity(technician_id=self.technician.id,
                                   technician_name_snapshot=self.technician.full_name)
                 self.db.add(act)
+            # قاعده‌ی وضعیت «انجام شد» تنها در سرویس تعریف می‌شود
+            status = vals.pop("status")
             for key, value in vals.items():
                 setattr(act, key, value)
+            svc.apply_status(act, status, date.today())
             act.updated_at = datetime.now()
             self.db.commit()
         except Exception as exc:

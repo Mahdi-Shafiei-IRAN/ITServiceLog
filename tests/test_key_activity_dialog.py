@@ -101,3 +101,31 @@ def test_category_combo_offers_defaults_and_used(qapp, db, owner, dialogs):
     assert items[0] == ""
     assert "شبکه" in items and "آنتی‌ویروس" in items
     assert dlg.cmb_category.isEditable()
+
+
+def test_saving_done_without_end_date_uses_service_rule(qapp, db, owner, dialogs):
+    dlg = KeyActivityDialog(db, owner)
+    dlg.txt_title.setText("کار تکمیل شده")
+    dlg.cmb_status.setCurrentText(KEY_STATUS_DONE)
+    dlg.chk_has_end.setChecked(False)
+    dlg.spn_progress.setValue(50)
+    assert dlg.save() is True
+    act = db.query(KeyActivity).one()
+    assert act.status == KEY_STATUS_DONE
+    assert act.progress == 100
+    assert act.end_date == date.today()
+
+
+def test_editing_done_activity_back_to_in_progress_clears_end_date(qapp, db, owner, dialogs):
+    act = KeyActivity(technician_id=owner.id, technician_name_snapshot=owner.full_name,
+                      title="قدیمی", start_date=date(2026, 9, 1),
+                      status=KEY_STATUS_DONE, progress=100, end_date=date(2026, 9, 3))
+    db.add(act)
+    db.commit()
+    dlg = KeyActivityDialog(db, owner, activity=act)
+    dlg.cmb_status.setCurrentText(KEY_STATUS_IN_PROGRESS)
+    assert dlg.save() is True
+    db.refresh(act)
+    assert act.status == KEY_STATUS_IN_PROGRESS
+    assert act.end_date is None
+    assert act.progress == 100
