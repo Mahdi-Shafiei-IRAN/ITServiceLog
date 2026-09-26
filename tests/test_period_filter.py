@@ -1,0 +1,42 @@
+from datetime import date
+
+from ui.period_filter import PeriodFilter, period_range, week_start
+
+TODAY = date(2026, 9, 26)   # شنبه
+
+
+def test_week_starts_on_saturday():
+    assert week_start(date(2026, 9, 26)) == date(2026, 9, 26)   # شنبه
+    assert week_start(date(2026, 10, 2)) == date(2026, 9, 26)   # جمعه
+    assert week_start(date(2026, 9, 27)) == date(2026, 9, 26)   # یکشنبه
+
+
+def test_period_ranges():
+    assert period_range("all", TODAY) is None
+    assert period_range("today", TODAY) == (TODAY, TODAY)
+    assert period_range("yesterday", TODAY) == (date(2026, 9, 25), date(2026, 9, 25))
+    assert period_range("last7", TODAY) == (date(2026, 9, 20), TODAY)
+    assert period_range("last30", TODAY) == (date(2026, 8, 28), TODAY)
+    assert period_range("this_week", TODAY) == (date(2026, 9, 26), TODAY)
+    assert period_range("last_week", TODAY) == (date(2026, 9, 19), date(2026, 9, 25))
+    assert period_range("this_month", TODAY) == (date(2026, 9, 1), TODAY)
+    assert period_range("last_month", TODAY) == (date(2026, 8, 1), date(2026, 8, 31))
+
+
+def test_custom_range_is_ordered():
+    a, b = date(2026, 9, 10), date(2026, 9, 1)
+    assert period_range("custom", TODAY, a, b) == (b, a)
+    assert period_range("custom", TODAY, b, a) == (b, a)
+
+
+def test_widget_default_and_custom_toggle(qapp):
+    w = PeriodFilter(default="this_month")
+    assert w.key() == "this_month"
+    assert not w.date_from.isEnabled() and not w.date_to.isEnabled()
+    fired = []
+    w.changed.connect(lambda: fired.append(1))
+    w.set_key("custom")
+    assert w.date_from.isEnabled() and w.date_to.isEnabled()
+    assert fired
+    w.set_key("all")
+    assert w.date_range() is None
