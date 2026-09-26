@@ -17,3 +17,8 @@ assets/seed.sqlite
 # Deployment config with server credentials (never commit)
 /deploy.json
 /config.json
+
+# Local dev environment / test + agent scratch
+/.venv/
+.pytest_cache/
+/.superpowers/
