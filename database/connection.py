@@ -93,7 +93,10 @@ def _migrate():
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
                 added.add((table, column))
     except Exception as exc:
-        if is_postgres:
+        # فقط قفلِ lock_timeout (SQLSTATE 55P03) پیام روشن می‌گیرد؛ بقیه‌ی خطاهای
+        # PostgreSQL (یا هر خطای دیگر) دست‌نخورده propagate می‌شوند.
+        pgcode = getattr(getattr(exc, "orig", None), "pgcode", None)
+        if is_postgres and pgcode == "55P03":
             raise RuntimeError(
                 "به‌روزرسانی ساختار دیتابیس انجام نشد چون برنامه روی سیستم‌های دیگر باز است. "
                 "همه‌ی نسخه‌های باز برنامه را ببندید و دوباره اجرا کنید.") from exc

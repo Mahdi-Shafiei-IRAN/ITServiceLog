@@ -2,6 +2,7 @@ from datetime import date
 
 import pytest
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 
 import database.connection as connection
 from database.models import (Base, Technician, KeyActivity, KeyActivityUpdate,
@@ -86,9 +87,9 @@ def test_migrate_skips_lock_timeout_when_nothing_to_add(tmp_path, monkeypatch):
     up_to_date.dispose()
 
 
-def test_migrate_wraps_postgres_alter_failure_in_persian_runtime_error(tmp_path, monkeypatch):
-    """قفل ACCESS EXCLUSIVE روی PostgreSQL باید با پیام فارسی روشن گزارش شود، نه استثنای خام."""
-    old = create_engine(f"sqlite:///{(tmp_path / 'old_pg.sqlite').as_posix()}")
+def _prepare_old_pg_engine(tmp_path, name):
+    """موتور SQLite که جای یک PostgreSQل قدیمی را می‌گیرد (بدون ستون تازه)."""
+    old = create_engine(f"sqlite:///{(tmp_path / name).as_posix()}")
     with old.begin() as conn:
         conn.execute(text(
             "CREATE TABLE technicians (id INTEGER PRIMARY KEY, full_name VARCHAR(100) NOT NULL, "
@@ -96,8 +97,25 @@ def test_migrate_wraps_postgres_alter_failure_in_persian_runtime_error(tmp_path,
             "password_hash VARCHAR(128) NOT NULL, role VARCHAR(20), department VARCHAR(10), "
             "is_active BOOLEAN)"))
     Base.metadata.create_all(bind=old)
+    return old
+
+
+class _FakeOrig(Exception):
+    """جایگزینِ استثنای خامِ DBAPI با pgcode دلخواه برای شبیه‌سازی خطاهای PostgreSQL."""
+    def __init__(self, pgcode):
+        super().__init__("fake dbapi error")
+        self.pgcode = pgcode
+
+
+def test_migrate_wraps_postgres_lock_timeout_in_persian_runtime_error(tmp_path, monkeypatch):
+    """فقط قفل lock_timeout (SQLSTATE 55P03) باید با پیام فارسی روشن گزارش شود."""
+    old = _prepare_old_pg_engine(tmp_path, "old_pg_lock.sqlite")
     monkeypatch.setattr(connection, "engine", old)
     monkeypatch.setattr(old.dialect, "name", "postgresql")
+
+    def fake_begin():
+        raise OperationalError("ALTER TABLE ...", {}, _FakeOrig("55P03"))
+    monkeypatch.setattr(old, "begin", fake_begin)
 
     with pytest.raises(RuntimeError) as excinfo:
         connection._migrate()
@@ -106,4 +124,34 @@ def test_migrate_wraps_postgres_alter_failure_in_persian_runtime_error(tmp_path,
 
     insp = inspect(old)
     assert "can_log_key_activities" not in {c["name"] for c in insp.get_columns("technicians")}
+    old.dispose()
+
+
+def test_migrate_reraises_non_lock_timeout_postgres_error_unchanged(tmp_path, monkeypatch):
+    """خطای دیگرِ PostgreSQL (pgcode متفاوت) نباید به RuntimeError عمومی بدل شود."""
+    old = _prepare_old_pg_engine(tmp_path, "old_pg_other.sqlite")
+    monkeypatch.setattr(connection, "engine", old)
+    monkeypatch.setattr(old.dialect, "name", "postgresql")
+
+    def fake_begin():
+        raise OperationalError("ALTER TABLE ...", {}, _FakeOrig("42601"))  # خطای نحوی، نه قفل
+    monkeypatch.setattr(old, "begin", fake_begin)
+
+    with pytest.raises(OperationalError):
+        connection._migrate()
+    old.dispose()
+
+
+def test_migrate_reraises_postgres_error_without_pgcode_unchanged(tmp_path, monkeypatch):
+    """خطایی که اصلاً pgcode ندارد هم باید بدون تغییر propagate شود."""
+    old = _prepare_old_pg_engine(tmp_path, "old_pg_no_pgcode.sqlite")
+    monkeypatch.setattr(connection, "engine", old)
+    monkeypatch.setattr(old.dialect, "name", "postgresql")
+
+    def fake_begin():
+        raise OperationalError("ALTER TABLE ...", {}, Exception("boom"))
+    monkeypatch.setattr(old, "begin", fake_begin)
+
+    with pytest.raises(OperationalError):
+        connection._migrate()
     old.dispose()
