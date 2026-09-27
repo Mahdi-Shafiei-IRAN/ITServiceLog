@@ -45,12 +45,25 @@ def test_activity_started_after_period_is_excluded():
 
 
 def test_activity_finished_before_period_is_excluded():
-    assert not svc.in_period(make(start=date(2026, 8, 1), end=date(2026, 8, 31)), SEPT)
+    assert not svc.in_period(make(start=date(2026, 8, 1), end=date(2026, 8, 31),
+                                  status=KEY_STATUS_DONE), SEPT)
 
 
 def test_period_edges_are_inclusive():
     assert svc.in_period(make(start=date(2026, 9, 30)), SEPT)
-    assert svc.in_period(make(start=date(2026, 8, 1), end=date(2026, 9, 1)), SEPT)
+    assert svc.in_period(make(start=date(2026, 8, 1), end=date(2026, 9, 1),
+                              status=KEY_STATUS_DONE), SEPT)
+
+
+def test_open_activity_with_past_manual_end_date_is_still_in_period():
+    """تاریخ اتمامِ دستی روی یک کارِ باز نباید آن را از بازه‌های بعدی مخفی کند."""
+    act = make(start=date(2026, 8, 1), end=date(2026, 8, 10), status=KEY_STATUS_IN_PROGRESS)
+    assert svc.in_period(act, SEPT)
+
+
+def test_cancelled_activity_ended_in_january_excluded_from_september():
+    act = make(start=date(2026, 1, 1), end=date(2026, 1, 15), status=KEY_STATUS_CANCELLED)
+    assert not svc.in_period(act, SEPT)
 
 
 # ------------------------------------------------------------------ updates / summary
@@ -109,6 +122,30 @@ def test_non_done_transition_keeps_manual_end_date():
     act = make(end=date(2026, 9, 30), status=KEY_STATUS_IN_PROGRESS)
     svc.apply_status(act, KEY_STATUS_ON_HOLD, date(2026, 9, 15))
     assert act.end_date == date(2026, 9, 30)
+
+
+def test_apply_cancelled_sets_end_date_and_keeps_progress():
+    act = make(progress=40)
+    svc.apply_status(act, KEY_STATUS_CANCELLED, date(2026, 9, 15))
+    assert act.status == KEY_STATUS_CANCELLED
+    assert act.end_date == date(2026, 9, 15)
+    assert act.progress == 40
+
+
+def test_leaving_cancelled_clears_end_date():
+    act = make(end=date(2026, 9, 12), status=KEY_STATUS_CANCELLED, progress=40)
+    svc.apply_status(act, KEY_STATUS_IN_PROGRESS, date(2026, 9, 15))
+    assert act.status == KEY_STATUS_IN_PROGRESS
+    assert act.end_date is None
+    assert act.progress == 40
+
+
+def test_done_to_cancelled_keeps_end_date():
+    act = make(end=date(2026, 9, 12), status=KEY_STATUS_DONE, progress=100)
+    svc.apply_status(act, KEY_STATUS_CANCELLED, date(2026, 9, 20))
+    assert act.status == KEY_STATUS_CANCELLED
+    assert act.end_date == date(2026, 9, 12)
+    assert act.progress == 100
 
 
 # ------------------------------------------------------------------ add_update

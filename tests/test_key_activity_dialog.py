@@ -3,7 +3,7 @@ from datetime import date
 from PySide6.QtCore import QDate
 
 from database.models import (KeyActivity, KEY_STATUS_DONE, KEY_STATUS_IN_PROGRESS,
-                             KEY_PRIORITY_NORMAL)
+                             KEY_STATUS_CANCELLED, KEY_PRIORITY_NORMAL)
 from ui.key_activity_dialog import KeyActivityDialog
 
 
@@ -114,6 +114,17 @@ def test_saving_done_without_end_date_uses_service_rule(qapp, db, owner, dialogs
     assert act.status == KEY_STATUS_DONE
     assert act.progress == 100
     assert act.end_date == date.today()
+
+
+def test_switching_to_cancelled_checks_end_date_but_keeps_progress(qapp, db, owner, dialogs):
+    dlg = KeyActivityDialog(db, owner)
+    dlg.spn_progress.setValue(30)
+    dlg.cmb_status.setCurrentText(KEY_STATUS_CANCELLED)
+    assert dlg.chk_has_end.isChecked()
+    assert dlg.date_end.date().toPython() == date.today()
+    assert dlg.spn_progress.value() == 30       # لغو کردن پیشرفت را دست نمی‌زند
+    dlg.cmb_status.setCurrentText(KEY_STATUS_IN_PROGRESS)
+    assert not dlg.chk_has_end.isChecked()
 
 
 def test_editing_done_activity_back_to_in_progress_clears_end_date(qapp, db, owner, dialogs):

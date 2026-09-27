@@ -17,12 +17,24 @@ def _in_range(d, rng):
     return rng is None or (d is not None and rng[0] <= d <= rng[1])
 
 
+def is_closed_status(status):
+    """وضعیت بسته است؟ («انجام شد» یا «لغو شد»)."""
+    return status in _CLOSED
+
+
 def in_period(activity, rng):
-    """کار با بازه هم‌پوشانی دارد؟ کارِ باز (بدون تاریخ اتمام) تا امروز ادامه دارد."""
+    """کار با بازه هم‌پوشانی دارد؟
+
+    تاریخ اتمام فقط برای وضعیت‌های بسته (انجام‌شده/لغوشده) معنا دارد؛ کارِ باز
+    حتی اگر تاریخ اتمامِ دستی هم داشته باشد، تا امروز باز در نظر گرفته می‌شود
+    (تا از بازه‌های بعدی پنهان نشود).
+    """
     if rng is None:
         return True
     if activity.start_date is None or activity.start_date > rng[1]:
         return False
+    if not is_closed_status(activity.status):
+        return True
     return activity.end_date is None or activity.end_date >= rng[0]
 
 
@@ -59,16 +71,20 @@ def summarize(activities, rng):
 def apply_status(activity, status, today):
     """تغییر وضعیت با قاعده‌ی تاریخ اتمام.
 
-    «انجام شد» ← پیشرفت ۱۰۰ و (اگر خالی بود) تاریخ اتمام = today.
-    خروج از «انجام شد» ← تاریخ اتمام پاک می‌شود (پیشرفت دست نمی‌خورد).
+    ورود به یک وضعیت بسته (انجام‌شده یا لغوشده) ← (اگر خالی بود) تاریخ اتمام = today؛
+    فقط «انجام شد» علاوه بر آن پیشرفت را هم ۱۰۰ می‌کند (لغو کردن پیشرفت را دست نمی‌زند).
+    خروج از یک وضعیت بسته به یک وضعیت باز ← تاریخ اتمام پاک می‌شود.
+    جابه‌جایی بین دو وضعیت بسته (انجام‌شده ⇄ لغوشده) تاریخ اتمام را حفظ می‌کند.
+    جابه‌جایی بین دو وضعیت باز اصلاً تاریخ اتمام را دست نمی‌زند.
     """
-    was_done = activity.status == KEY_STATUS_DONE
+    was_closed = is_closed_status(activity.status)
     activity.status = status
-    if status == KEY_STATUS_DONE:
-        activity.progress = 100
+    if is_closed_status(status):
+        if status == KEY_STATUS_DONE:
+            activity.progress = 100
         if activity.end_date is None:
             activity.end_date = today
-    elif was_done:
+    elif was_closed:
         activity.end_date = None
 
 

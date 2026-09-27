@@ -141,13 +141,20 @@ class KeyActivityDialog(QDialog):
         return self.chk_one_day is not None and self.chk_one_day.isChecked()
 
     def _on_status_changed(self, status):
-        """همان قاعده‌ی apply_status در سرویس، روی فرم."""
-        if status == KEY_STATUS_DONE:
-            self.spn_progress.setValue(100)
+        """همان قاعده‌ی apply_status در سرویس، روی فرم.
+
+        ورود به یک وضعیت بسته (انجام‌شده یا لغوشده) ← اگر تیک «تاریخ اتمام دارد»
+        خورده نبود، با تاریخ امروز خورده می‌شود؛ فقط «انجام شد» پیشرفت را هم
+        ۱۰۰ می‌کند. خروج از وضعیت بسته به یک وضعیت باز ← تیک برداشته می‌شود.
+        جابه‌جایی بین دو وضعیت بسته چیزی را تغییر نمی‌دهد.
+        """
+        if svc.is_closed_status(status):
+            if status == KEY_STATUS_DONE:
+                self.spn_progress.setValue(100)
             if not self.chk_has_end.isChecked():
                 self.chk_has_end.setChecked(True)
                 self.date_end.setDate(QDate.currentDate())
-        elif self._last_status == KEY_STATUS_DONE:
+        elif svc.is_closed_status(self._last_status):
             self.chk_has_end.setChecked(False)
         self._last_status = status
 
