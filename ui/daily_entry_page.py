@@ -13,32 +13,15 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QPushButton, QTreeWidget, QTreeWidgetItem,
                                QTextEdit, QMessageBox, QGroupBox, QDateEdit, QTableWidget,
                                QTableWidgetItem, QComboBox, QHeaderView, QSplitter,
-                               QAbstractItemView, QCompleter, QStyledItemDelegate)
+                               QAbstractItemView, QCompleter)
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QBrush, QColor
 from sqlalchemy.orm import Session
 
 from database.models import (Task, ServiceRecord, ServiceRecordTask, Employee,
                              DEPT_IT, DEPT_SITE, DEPT_LABELS)
-from ui.theme import theme
 from ui.widgets import CountStepper
 
 NAMED_COLUMNS = ["خدمت", "نام فرد", "داخلی", "توضیح"]
-
-
-class _RowTintDelegate(QStyledItemDelegate):
-    """رنگِ BackgroundRole را خودش می‌کشد.
-
-    وقتی استایل‌شیت برای ::item قاعده دارد (مثلاً خط جداکننده‌ی ردیف)، Qt رنگ
-    پس‌زمینه‌ی تک‌تک آیتم‌ها را نادیده می‌گیرد؛ پس سبزِ «این ردیف تعداد دارد» دیده
-    نمی‌شد. hover و انتخاب از QSS بعد از این رنگ کشیده می‌شوند و رویش می‌نشینند.
-    """
-
-    def paint(self, painter, option, index):
-        brush = index.data(Qt.BackgroundRole)
-        if isinstance(brush, QBrush) and brush.style() != Qt.NoBrush:
-            painter.fillRect(option.rect, brush)
-        super().paint(painter, option, index)
 
 
 class DailyEntryPage(QWidget):
@@ -54,10 +37,8 @@ class DailyEntryPage(QWidget):
         self.task_items = {}          # task_id -> QTreeWidgetItem (برای تیک‌ها)
         self.note_widgets = {}        # task_id -> QLineEdit توضیح کوتاه (واحد سایت)
         self.named_tasks = []         # [(id, title)]
-        self._marking = False         # جلوگیری از حلقه‌ی itemChanged هنگام رنگ کردن ردیف
         self.setup_ui()
         self.load_data()
-        theme.changed.connect(self._refresh_marks)
 
     # ---------------------------------------------------------------- UI
     def setup_ui(self):
@@ -107,26 +88,20 @@ class DailyEntryPage(QWidget):
         general_layout.addWidget(self.txt_task_search)
 
         self.task_tree = QTreeWidget()
-        self.task_tree.setAlternatingRowColors(True)
-        self._tint_delegate = _RowTintDelegate(self.task_tree)
-        self.task_tree.setItemDelegate(self._tint_delegate)
-        # شمارنده درست کنار نام خدمت می‌نشیند (ستون نام به اندازه‌ی محتوا، نه کشسان)؛
-        # قبلاً نام در یک سر ردیف و عدد در سر دیگر بود و عددِ ردیفِ کناری اشتباهی بالا می‌رفت.
         if self.use_checkboxes:
             # واحد سایت: خدمت | تعداد اختیاری | توضیح کوتاه اختیاری
             self.task_tree.setColumnCount(3)
             self.task_tree.setHeaderLabels(["خدمت", "تعداد (اختیاری)", "توضیح کوتاه (اختیاری)"])
+            self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+            self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.task_tree.header().setSectionResizeMode(2, QHeaderView.Stretch)
+            self.task_tree.setColumnWidth(1, 118)
         else:
-            # واحد IT: خدمت | تعداد | (فضای خالیِ باقی‌مانده)
-            self.task_tree.setColumnCount(3)
-            self.task_tree.setHeaderLabels(["خدمت", "تعداد", ""])
-        tree_header = self.task_tree.header()
-        tree_header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        tree_header.setSectionResizeMode(1, QHeaderView.Fixed)
-        tree_header.setSectionResizeMode(2, QHeaderView.Stretch)
-        self.task_tree.setColumnWidth(1, 118)
-        if self.use_checkboxes:
-            self.task_tree.itemChanged.connect(self._on_item_changed)
+            self.task_tree.setColumnCount(2)
+            self.task_tree.setHeaderLabels(["خدمت", "تعداد"])
+            self.task_tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
+            self.task_tree.header().setSectionResizeMode(1, QHeaderView.Fixed)
+            self.task_tree.setColumnWidth(1, 118)
         general_layout.addWidget(self.task_tree)
 
         clear_label = "پاک کردن انتخاب‌ها و تعدادها" if self.use_checkboxes else "صفر کردن همه‌ی تعدادها"
@@ -277,10 +252,6 @@ class DailyEntryPage(QWidget):
         if self.use_checkboxes:
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(0, Qt.Unchecked)
-        else:
-            # QTreeWidgetItem به‌صورت پیش‌فرض تیک‌پذیر است؛ در واحد IT تیک هیچ اثری
-            # ندارد و فقط کاربر را گیج می‌کرد (کنار همه‌ی خدمات یک چک‌باکسِ بی‌کار).
-            item.setFlags(item.flags() & ~Qt.ItemIsUserCheckable)
 
         spin = CountStepper(0, 999)
         spin.setFixedWidth(112)
@@ -289,8 +260,6 @@ class DailyEntryPage(QWidget):
         item.setSizeHint(1, spin.sizeHint())
         self.count_widgets[task.id] = spin
         self.task_items[task.id] = item
-        spin.valueChanged.connect(lambda _value, it=item: self._mark_row(it))
-        spin.activated.connect(lambda it=item: self._highlight_row(it))
 
         # واحد سایت: یک فیلد توضیح کوتاه اختیاری برای هر خدمت
         if self.use_checkboxes:
@@ -373,52 +342,11 @@ class DailyEntryPage(QWidget):
     def _clear_counts(self):
         for spin in self.count_widgets.values():
             spin.setValue(0)
-        # فقط واحد سایت تیک دارد؛ setCheckState روی ردیف‌های IT یک چک‌باکسِ بی‌کار می‌ساخت
-        if self.use_checkboxes:
-            for item in self.task_items.values():
+        for item in self.task_items.values():
+            if item.flags() & Qt.ItemIsUserCheckable:
                 item.setCheckState(0, Qt.Unchecked)
         for note in self.note_widgets.values():
             note.clear()
-
-    # ---------------------------------------------- مشخص کردن ردیف‌ها
-    def _is_active(self, item):
-        spin = self.count_widgets.get(item.data(0, Qt.UserRole))
-        if spin is not None and spin.value() > 0:
-            return True
-        return self.use_checkboxes and item.checkState(0) == Qt.Checked
-
-    def _mark_row(self, item):
-        """ردیفِ دارای تعداد (یا تیک) سبزِ کم‌رنگ و نامش پررنگ می‌شود؛ اگر عددِ خدمتِ
-        اشتباهی بالا برود، همان لحظه به چشم می‌آید."""
-        if self._marking:
-            return
-        self._marking = True
-        try:
-            active = self._is_active(item)
-            font = item.font(0)
-            if font.bold() != active:
-                font.setBold(active)
-                item.setFont(0, font)
-            tint = QBrush(QColor(theme.palette["chip_success_bg"])) if active else None
-            for col in range(self.task_tree.columnCount()):
-                item.setData(col, Qt.BackgroundRole, tint)
-        finally:
-            self._marking = False
-
-    def _refresh_marks(self, *_):
-        for item in self.task_items.values():
-            self._mark_row(item)
-
-    def _on_item_changed(self, item, column):
-        if column == 0:
-            self._mark_row(item)
-
-    def _highlight_row(self, item):
-        """ماوس روی شمارنده رفت یا فیلدش فوکوس گرفت ← ردیفِ همان خدمت (با نامش)
-        انتخاب‌شده نشان داده می‌شود تا معلوم باشد این عدد مال کدام خدمت است."""
-        if not item.isSelected():
-            self.task_tree.clearSelection()
-            item.setSelected(True)
 
     # ------------------------------------------------------ جدول نام‌دارها
     def add_named_row(self, task_id=None, name="", ext="", note=""):
