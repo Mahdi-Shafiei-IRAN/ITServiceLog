@@ -62,6 +62,7 @@ class KeyActivitiesPage(QWidget):
         self.all = []
         self.shown = []
         self.current = None
+        self._current_id = None  # شناسه‌ی ساده؛ چون self.current بعد از commit/rollback expire می‌شود
         self.btn_new = None
         self.update_box = None
         self.cmb_owner = None
@@ -265,8 +266,8 @@ class KeyActivitiesPage(QWidget):
 
     # ------------------------------------------------------------ داده‌ها
     def load_data(self, select_id=None):
-        if select_id is None and self.current is not None:
-            select_id = self.current.id
+        if select_id is None:
+            select_id = self._current_id
         self._refresh_combo(self.cmb_category,
                             [(c, c) for c in svc.category_suggestions(self.db)])
         query = self.db.query(KeyActivity)
@@ -293,8 +294,8 @@ class KeyActivitiesPage(QWidget):
         combo.blockSignals(False)
 
     def apply_filters(self, *_, select_id=None):
-        if select_id is None and self.current is not None:
-            select_id = self.current.id
+        if select_id is None:
+            select_id = self._current_id
         rng = self.period.date_range()
         filtered = svc.filter_activities(
             self.all, rng=rng,
@@ -351,12 +352,14 @@ class KeyActivitiesPage(QWidget):
             self.table.selectRow(row)
         else:
             self.current = None
+            self._current_id = None
             self._show_detail(None)
 
     def _on_selection(self):
         rows = self.table.selectionModel().selectedRows()
         row = rows[0].row() if rows else -1
         self.current = self.shown[row] if 0 <= row < len(self.shown) else None
+        self._current_id = self.current.id if self.current is not None else None
         self._show_detail(self.current)
 
     def _show_detail(self, a):
@@ -402,15 +405,36 @@ class KeyActivitiesPage(QWidget):
         if dlg.exec():
             self.load_data(select_id=dlg.activity.id)
 
+    def _fetch_current_or_warn(self):
+        """کار انتخاب‌شده را دوباره از دیتابیس می‌خواند (self.current ممکن است expire شده باشد).
+
+        اگر کار در همین فاصله (مثلاً از یک ماشین دیگر) حذف شده باشد، پیام می‌دهد،
+        انتخاب را پاک می‌کند و صفحه را تازه می‌کند.
+        """
+        act = self.db.get(KeyActivity, self._current_id) if self._current_id is not None else None
+        if act is None:
+            QMessageBox.information(self, "توجه",
+                                    "این کار دیگر وجود ندارد (احتمالاً حذف شده است).")
+            self.current = None
+            self._current_id = None
+            self.load_data()
+        return act
+
     def edit_activity(self):
-        if self.admin or self.current is None:
+        if self.admin or self._current_id is None:
             return
-        dlg = KeyActivityDialog(self.db, self.technician, activity=self.current, parent=self)
+        act = self._fetch_current_or_warn()
+        if act is None:
+            return
+        dlg = KeyActivityDialog(self.db, self.technician, activity=act, parent=self)
         if dlg.exec():
             self.load_data()
 
     def add_update(self):
-        if self.admin or self.current is None:
+        if self.admin or self._current_id is None:
+            return
+        act = self._fetch_current_or_warn()
+        if act is None:
             return
         text = self.txt_update.text().strip()
         if not text:
@@ -426,7 +450,7 @@ class KeyActivitiesPage(QWidget):
             if answer == QMessageBox.Yes:
                 status = KEY_STATUS_DONE
         try:
-            svc.add_update(self.db, self.current, self.date_update.date().toPython(), text,
+            svc.add_update(self.db, act, self.date_update.date().toPython(), text,
                            progress=progress, status=status, author=self.technician.full_name)
             self.db.commit()
         except ValueError as exc:
@@ -441,24 +465,27 @@ class KeyActivitiesPage(QWidget):
         self.load_data()
 
     def delete_activity(self):
-        if self.admin or self.current is None:
+        if self.admin or self._current_id is None:
             return
-        a = self.current
+        act = self._fetch_current_or_warn()
+        if act is None:
+            return
         confirm = QMessageBox.question(
             self, "تأیید حذف",
-            f"کار شاخص «{a.title}» همراه با {len(a.updates)} به‌روزرسانی حذف شود؟ "
+            f"کار شاخص «{act.title}» همراه با {len(act.updates)} به‌روزرسانی حذف شود؟ "
             "این عملیات قابل بازگشت نیست.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if confirm != QMessageBox.Yes:
             return
         try:
-            self.db.delete(a)
+            self.db.delete(act)
             self.db.commit()
         except Exception as exc:
             self.db.rollback()
             QMessageBox.critical(self, "خطا", f"حذف کار شاخص ممکن نشد:\n{exc}")
             return
         self.current = None
+        self._current_id = None
         self.load_data()
 
     def export(self):

@@ -169,3 +169,38 @@ def test_export_with_nothing_shown_warns(qapp, db, owner, dialogs):
     page = _page(db, owner)
     page.export()
     assert calls[-1][0] == "warning"
+
+
+def _delete_elsewhere(activity_id):
+    """شبیه‌سازیِ حذف همان ردیف از یک اتصال دیگر (مثلاً یک ماشین دیگر)."""
+    from database.connection import SessionLocal
+    other_db = SessionLocal()
+    row = other_db.get(KeyActivity, activity_id)
+    other_db.delete(row)
+    other_db.commit()
+    other_db.close()
+
+
+def test_load_data_survives_deleted_selected_activity(qapp, db, owner, dialogs):
+    act = _add(db, owner, "کار موقت")
+    page = _page(db, owner)
+    page.table.selectRow(0)
+    assert page.current is not None
+    _delete_elsewhere(act.id)
+    db.expire_all()   # شبیه‌سازیِ اکسپایر شدن شیء پس از commit روی سشن مشترک
+    page.load_data()  # نباید ObjectDeletedError بدهد
+    assert page.current is None
+    assert page.table.rowCount() == 0
+
+
+def test_edit_activity_handles_deleted_selection(qapp, db, owner, dialogs):
+    calls, _ = dialogs
+    act = _add(db, owner, "کار موقت")
+    page = _page(db, owner)
+    page.table.selectRow(0)
+    _delete_elsewhere(act.id)
+    db.expire_all()
+    page.edit_activity()  # نباید ObjectDeletedError بدهد
+    assert any(kind == "information" for kind, _ in calls)
+    assert page.current is None
+    assert page.table.rowCount() == 0
