@@ -1,6 +1,6 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-                               QComboBox, QMessageBox, QAbstractItemView)
+                               QComboBox, QMessageBox, QAbstractItemView, QCheckBox)
 from PySide6.QtCore import Qt
 from sqlalchemy.orm import Session
 from database.models import Technician, ServiceRecord, DEPARTMENTS
@@ -52,6 +52,10 @@ class TechniciansPage(QWidget):
             self.cmb_dept.addItem(label, key)
         self.cmb_dept.addItem("هر دو بخش", "BOTH")
 
+        # اجازه‌ی ثبت در تبِ «کارهای شاخص IT» (مستقل از نقش)
+        self.chk_key_activities = QCheckBox("ثبت کارهای شاخص")
+        self.chk_key_activities.setToolTip("این کاربر تبِ «کارهای شاخص IT» را می‌بیند و در آن ثبت می‌کند.")
+
         btn_add = QPushButton("ثبت / ذخیره")
         btn_add.setCursor(Qt.PointingHandCursor)
         btn_add.clicked.connect(self.save_technician)
@@ -72,6 +76,7 @@ class TechniciansPage(QWidget):
         form_layout.addWidget(self.txt_pass)
         form_layout.addWidget(self.cmb_role)
         form_layout.addWidget(self.cmb_dept)
+        form_layout.addWidget(self.chk_key_activities)
         form_layout.addWidget(btn_add)
         form_layout.addWidget(btn_new)
         form_layout.addWidget(btn_delete)
@@ -79,9 +84,9 @@ class TechniciansPage(QWidget):
 
         # جدول نمایش کارشناسان
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
-            ["شناسه", "نام", "داخلی", "نام کاربری", "نقش (Role)", "بخش"])
+            ["شناسه", "نام", "داخلی", "نام کاربری", "نقش (Role)", "بخش", "کارهای شاخص"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -104,6 +109,7 @@ class TechniciansPage(QWidget):
             self.table.setItem(row, 4, QTableWidgetItem("مدیر" if t.role == "Administrator" else "کارشناس"))
             dept_label = {"BOTH": "هر دو بخش"}.get(t.department) or dict(DEPARTMENTS).get(t.department, "واحد IT")
             self.table.setItem(row, 5, QTableWidgetItem(dept_label))
+            self.table.setItem(row, 6, QTableWidgetItem("✓" if t.can_log_key_activities else "–"))
 
     def _selected_row(self):
         sel = self.table.selectionModel().selectedRows()
@@ -126,6 +132,7 @@ class TechniciansPage(QWidget):
         self.cmb_role.setCurrentText(t.role)
         idx = self.cmb_dept.findData(t.department or "IT")
         self.cmb_dept.setCurrentIndex(idx if idx >= 0 else 0)
+        self.chk_key_activities.setChecked(bool(t.can_log_key_activities))
         self.lbl_mode.setText(f"حالت: ویرایش کارشناس «{t.full_name}» (#{t.id})")
 
     def clear_form(self):
@@ -136,7 +143,12 @@ class TechniciansPage(QWidget):
         self.txt_pass.setPlaceholderText("رمز عبور...")
         self.cmb_role.setCurrentIndex(0)
         self.cmb_dept.setCurrentIndex(0)
+        self.chk_key_activities.setChecked(False)
+        # بدون سیگنال، تا on_row_selected فرم را دوباره از ردیفِ فعلی پر نکند
+        self.table.blockSignals(True)
         self.table.clearSelection()
+        self.table.setCurrentCell(-1, -1)
+        self.table.blockSignals(False)
         self.lbl_mode.setText("حالت: افزودن کارشناس جدید")
 
     def save_technician(self):
@@ -146,6 +158,7 @@ class TechniciansPage(QWidget):
         role = self.cmb_role.currentText()
         dept = self.cmb_dept.currentData()
         ext = self.txt_ext.text().strip()
+        key_access = self.chk_key_activities.isChecked()
 
         if not name or not user:
             return QMessageBox.warning(self, "خطا", "نام و نام کاربری الزامی است.")
@@ -166,6 +179,7 @@ class TechniciansPage(QWidget):
             tech.username = user
             tech.role = role
             tech.department = dept
+            tech.can_log_key_activities = key_access
             if pwd:  # فقط اگر رمز جدید وارد شده باشد
                 tech.password_hash = pwd
 
@@ -188,6 +202,7 @@ class TechniciansPage(QWidget):
                 password_hash=pwd,  # در سیستم‌های بزرگ‌تر باید هش شود
                 role=role,
                 department=dept,
+                can_log_key_activities=key_access,
             )
             self.db.add(new_tech)
             self.db.commit()

@@ -13,6 +13,7 @@ from ui.report_tabs import ReportTabs
 from ui.tasks_page import TasksPage
 from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
+from ui.key_activities_page import KeyActivitiesPage
 from ui.theme import set_variant, make_theme_toggle
 from database.models import DEPT_LABELS, DEPT_SITE, DEPT_IT
 
@@ -66,7 +67,12 @@ class MainWindow(QMainWindow):
                 page = DailyEntryPage(self.db_session, self.technician, dept)
                 self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
-        
+
+        # --- کارهای شاخص IT: فقط کاربرانی که تیکِ «ثبت کارهای شاخص» دارند ---
+        if self.technician.can_log_key_activities:
+            self.tab_key_activities = KeyActivitiesPage(self.db_session, self.technician)
+            self.tabs.addTab(self.tab_key_activities, "کارهای شاخص IT")
+
         # --- «گزارش‌های من»: یک تب با تب‌های داخلی (IT / سایت / نام‌دار) ---
         depts = self.technician.departments()
         has_it = DEPT_IT in depts
@@ -102,6 +108,10 @@ class MainWindow(QMainWindow):
             # گزارشات کلی واحد سایت (خودش دو تب داخلی روزانه/پایش دارد)
             self.tab_admin_site = SiteReportsPage(self.db_session, technician=None, admin=True)
             self.tabs.addTab(self.tab_admin_site, "گزارشات کلی واحد سایت")
+
+            # گزارش کارهای شاخص IT: همه‌ی کاربران، فقط‌خواندنی
+            self.tab_admin_key = KeyActivitiesPage(self.db_session, self.technician, admin=True)
+            self.tabs.addTab(self.tab_admin_key, "گزارش کارهای شاخص")
 
             # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم
             self.tab_dashboard = None
