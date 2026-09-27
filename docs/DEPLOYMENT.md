@@ -129,12 +129,15 @@ ACCESS EXCLUSIVE است؛ اگر همان لحظه کلاینت‌های دیگ�
 - پیش‌تر، یک‌بار به‌عنوان مالکِ دیتابیس این SQL را روی PostgreSQL اجرا کنید:
 
 ```sql
+SET lock_timeout = '5s';
 ALTER TABLE technicians ADD COLUMN can_log_key_activities BOOLEAN;
 UPDATE technicians SET can_log_key_activities = FALSE WHERE can_log_key_activities IS NULL;
 ```
 
 - جدول‌های جدید (`key_activities`, `key_activity_updates`) نیازی به این کار ندارند؛ چون
   جدول تازه‌اند (نه ستونِ اضافه‌شده به جدول موجود)، در اولین اجرا خودکار ساخته می‌شوند.
+- اگر این SQL هم به‌خاطر قفل ACCESS EXCLUSIVE با خطای timeout شکست خورد، کلاینت‌های باز را
+  ببندید و دوباره اجرایش کنید.
 - اگر یک کلاینت هنگام بالا آمدن پیغام «همه‌ی نسخه‌های باز برنامه را ببندید و دوباره اجرا
   کنید» را دید، بقیه‌ی کپی‌های باز را ببندید و دوباره اجرا کنید.
 
