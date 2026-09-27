@@ -432,8 +432,10 @@ class KeyActivitiesPage(QWidget):
         if act is None:
             return
         dlg = KeyActivityDialog(self.db, self.technician, activity=act, parent=self)
-        if dlg.exec():
-            self.load_data()
+        dlg.exec()
+        # همیشه (حتی اگر لغو شود) تازه می‌کنیم؛ چون دیالوگ در شکستِ ذخیره‌ی خودش هم
+        # rollback می‌زند و self.all باید با سشن هم‌سو بماند.
+        self.load_data()
 
     def add_update(self):
         if self.admin or self._current_id is None:
@@ -461,10 +463,12 @@ class KeyActivitiesPage(QWidget):
         except ValueError as exc:
             self.db.rollback()
             QMessageBox.warning(self, "خطا", str(exc))
+            self.load_data()
             return
         except Exception as exc:
             self.db.rollback()
             QMessageBox.critical(self, "خطا", f"ثبت به‌روزرسانی ممکن نشد:\n{exc}")
+            self.load_data()
             return
         self.txt_update.clear()
         self.load_data()
@@ -488,6 +492,7 @@ class KeyActivitiesPage(QWidget):
         except Exception as exc:
             self.db.rollback()
             QMessageBox.critical(self, "خطا", f"حذف کار شاخص ممکن نشد:\n{exc}")
+            self.load_data()
             return
         self.current = None
         self._current_id = None

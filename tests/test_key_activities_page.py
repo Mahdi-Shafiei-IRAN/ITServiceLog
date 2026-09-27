@@ -1,5 +1,6 @@
-from datetime import date
+from datetime import date, timedelta
 
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from database.models import (KeyActivity, KEY_STATUS_DONE, KEY_STATUS_IN_PROGRESS,
@@ -188,6 +189,10 @@ def test_admin_export_with_owner_filter_names_that_owner(qapp, db, owner, other,
     assert summary["ثبت‌کننده"] == other.full_name
 
 
+def _row_of(page, act):
+    return next(i for i, a in enumerate(page.shown) if a.id == act.id)
+
+
 def _delete_elsewhere(activity_id):
     """شبیه‌سازیِ حذف همان ردیف از یک اتصال دیگر (مثلاً یک ماشین دیگر)."""
     from database.connection import SessionLocal
@@ -208,6 +213,33 @@ def test_load_data_survives_deleted_selected_activity(qapp, db, owner, dialogs):
     page.load_data()  # نباید ObjectDeletedError بدهد
     assert page.current is None
     assert page.table.rowCount() == 0
+
+
+def test_apply_filters_after_rollback_survives_deleted_other_activity(qapp, db, owner, dialogs):
+    """رول‌بکِ خطای یک کار نباید کارِ دیگری را که هم‌زمان جای دیگر حذف شده، در
+    self.all اکسپایرشده نگه دارد؛ وگرنه فیلتر/جستجوی بعدی با ObjectDeletedError می‌ترکد."""
+    act_a = _add(db, owner, "الف", start_date=date.today())
+    act_b = _add(db, owner, "ب")
+    page = _page(db, owner)
+    page.table.selectRow(_row_of(page, act_a))
+    assert page.current is not None and page.current.id == act_a.id
+
+    _delete_elsewhere(act_b.id)
+    db.expire_all()
+
+    # مسیر ValueError در add_update: تاریخِ به‌روزرسانی قبل از تاریخ شروعِ کار ← رول‌بک
+    before_start = act_a.start_date - timedelta(days=1)
+    page.date_update.setDate(QDate(before_start.year, before_start.month, before_start.day))
+    page.txt_update.setText("متن به‌روزرسانی")
+    page.btn_add_update.click()
+
+    calls, _ = dialogs
+    assert any(kind == "warning" for kind, _ in calls)
+
+    # نباید ObjectDeletedError بدهد (self.all دیگر نباید کارِ حذف‌شده‌ی «ب» را نگه دارد)
+    page.txt_search.setText("x")
+    page.txt_search.setText("")
+    assert page.table.rowCount() == 1
 
 
 def test_edit_activity_handles_deleted_selection(qapp, db, owner, dialogs):
