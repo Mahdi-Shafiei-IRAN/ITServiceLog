@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy import text
 
 from database.models import Technician
 from ui.main_window import MainWindow
@@ -80,9 +81,19 @@ def test_null_key_activities_flag_hides_owner_tab_and_shows_dash(qapp, db, admin
     legacy = Technician(full_name="کارشناس قدیمی", username="legacyuser",
                         password_hash="x", role="Technician", department="IT",
                         is_active=True)
-    legacy.can_log_key_activities = None
     db.add(legacy)
     db.commit()
+    # روی ستونِ Column(default=False)، نوشتنِ None از طریق ORM باعث اعمال همان
+    # پیش‌فرض (False) می‌شود، نه NULL واقعی؛ پس NULL را مستقیماً با SQL خام می‌نویسیم
+    # تا رفتار رکوردهای قدیمی (قبل از این ستون) واقعاً شبیه‌سازی شود.
+    db.execute(text("UPDATE technicians SET can_log_key_activities = NULL WHERE id = :i"),
+              {"i": legacy.id})
+    db.commit()
+    stored = db.execute(
+        text("SELECT can_log_key_activities FROM technicians WHERE id = :i"),
+        {"i": legacy.id}).scalar()
+    assert stored is None
+    db.refresh(legacy)  # شیء ORM را با مقدار واقعیِ NULL هم‌سو می‌کند
 
     titles = _titles(open_window(legacy))
     assert OWNER_TAB not in titles
