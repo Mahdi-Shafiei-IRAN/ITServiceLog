@@ -97,10 +97,14 @@ def add_update(db, activity, update_date, text, progress=None, status=None, auth
         raise ValueError("درصد پیشرفت باید بین ۰ تا ۱۰۰ باشد.")
     if status is not None and status not in KEY_STATUSES:
         raise ValueError(f"وضعیت نامعتبر است: {status}")
+    if activity.start_date is not None and update_date < activity.start_date:
+        raise ValueError("تاریخ به‌روزرسانی نمی‌تواند قبل از تاریخ شروع کار باشد.")
 
     if progress is not None:
         activity.progress = progress
-    if status is not None and status != activity.status:
+    if status is not None:
+        # هر بار که وضعیت در به‌روزرسانی می‌آید (حتی بدون تغییر) اجرا می‌شود؛
+        # وگرنه یک به‌روزرسانیِ بی‌احتیاط می‌تواند کارِ «انجام شد» را زیر ۱۰۰٪ نگه دارد.
         apply_status(activity, status, update_date)
     activity.updated_at = datetime.now()
 

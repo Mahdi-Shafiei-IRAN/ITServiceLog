@@ -195,6 +195,22 @@ def test_add_update_same_status_does_not_touch_end_date(db, owner):
     assert act.end_date == date(2026, 9, 5)
 
 
+def test_add_update_progress_below_100_is_forced_back_to_100_when_done(db, owner):
+    """یک به‌روزرسانی نباید بتواند کار انجام‌شده را زیر ۱۰۰٪ نگه دارد."""
+    act = _saved_activity(db, owner, status=KEY_STATUS_DONE, progress=100,
+                          end_date=date(2026, 9, 5))
+    svc.add_update(db, act, date(2026, 9, 20), "یادداشت", progress=80, status=KEY_STATUS_DONE)
+    db.commit()
+    assert act.progress == 100
+
+
+def test_add_update_before_start_date_is_rejected(db, owner):
+    act = _saved_activity(db, owner, start_date=date(2026, 9, 10))
+    with pytest.raises(ValueError):
+        svc.add_update(db, act, date(2026, 9, 5), "زودتر از شروع")
+    assert act.updates == []
+
+
 @pytest.mark.parametrize("kwargs", [
     {"text": "   "},
     {"text": "ok", "progress": 101},

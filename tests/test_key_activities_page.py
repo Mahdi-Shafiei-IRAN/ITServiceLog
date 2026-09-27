@@ -171,6 +171,23 @@ def test_export_with_nothing_shown_warns(qapp, db, owner, dialogs):
     assert calls[-1][0] == "warning"
 
 
+def test_admin_export_with_owner_filter_names_that_owner(qapp, db, owner, other, admin,
+                                                          dialogs, monkeypatch, tmp_path):
+    import openpyxl
+    _add(db, owner, "A")
+    _add(db, other, "C")
+    target = tmp_path / "out.xlsx"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(target), ""))
+    page = _page(db, admin, admin=True)
+    page.cmb_owner.setCurrentIndex(page.cmb_owner.findData(other.id))
+    page.export()
+    wb = openpyxl.load_workbook(target)
+    ws = wb["جمع‌بندی"]
+    summary = {ws.cell(row=r, column=1).value: ws.cell(row=r, column=2).value
+              for r in range(2, ws.max_row + 1)}
+    assert summary["ثبت‌کننده"] == other.full_name
+
+
 def _delete_elsewhere(activity_id):
     """شبیه‌سازیِ حذف همان ردیف از یک اتصال دیگر (مثلاً یک ماشین دیگر)."""
     from database.connection import SessionLocal

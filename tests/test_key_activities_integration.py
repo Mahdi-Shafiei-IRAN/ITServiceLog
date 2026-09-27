@@ -75,6 +75,23 @@ def test_selecting_flagged_user_checks_box(qapp, db, admin, owner, dialogs):
     assert page.table.item(_row_of(page, admin), 6).text() == "–"
 
 
+def test_null_key_activities_flag_hides_owner_tab_and_shows_dash(qapp, db, admin, open_window):
+    """ردیفی که نسخه‌ی قدیمی‌تر برنامه نوشته (ستون تازه NULL است، نه False)."""
+    legacy = Technician(full_name="کارشناس قدیمی", username="legacyuser",
+                        password_hash="x", role="Technician", department="IT",
+                        is_active=True)
+    legacy.can_log_key_activities = None
+    db.add(legacy)
+    db.commit()
+
+    titles = _titles(open_window(legacy))
+    assert OWNER_TAB not in titles
+
+    page = TechniciansPage(db, admin)
+    row = _row_of(page, legacy)
+    assert page.table.item(row, 6).text() == "–"
+
+
 def test_new_user_with_access(qapp, db, admin, dialogs):
     page = TechniciansPage(db, admin)
     page.txt_name.setText("کاربر جدید")

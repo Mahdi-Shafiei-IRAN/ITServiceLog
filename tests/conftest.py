@@ -20,6 +20,10 @@ from database.models import Base, Technician  # noqa: E402
 @pytest.fixture
 def db():
     """هر تست با اسکیمای تازه و خالی شروع می‌شود."""
+    # اطمینان از اینکه drop_all هرگز به یک دیتابیس واقعی اصابت نمی‌کند
+    assert engine.dialect.name == "sqlite"
+    db_file = os.path.abspath(engine.url.database)
+    assert db_file.startswith(os.path.abspath(_TMP_DIR))
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     session = SessionLocal()

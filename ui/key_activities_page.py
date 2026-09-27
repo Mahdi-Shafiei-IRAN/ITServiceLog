@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
                                QProgressBar)
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt, QDate, QItemSelection, QItemSelectionModel
+from sqlalchemy.orm import selectinload
 
 from database.models import (KeyActivity, Technician, KEY_STATUSES, KEY_STATUS_DONE,
                              KEY_STATUS_IN_PROGRESS, KEY_PRIORITIES, KEY_PRIORITY_TOP)
@@ -36,10 +37,13 @@ def _dt(d):
 class _ActivityTable(QTableWidget):
     """QTableWidget با selectRow دستی.
 
-    در چیدمان راست‌به‌چپ (RTL) + رندر offscreen (محیط تست)، پیاده‌سازی
-    پیش‌فرض Qt برای selectRow گاهی هیچ سطری را انتخاب نمی‌کند و سیگنال
-    itemSelectionChanged منتشر نمی‌شود. این بازنویسیِ حداقلی همان انتخاب
-    را مستقیماً از طریق selectionModel انجام می‌دهد تا در همه‌ی محیط‌ها یکسان کار کند.
+    پیاده‌سازیِ پیش‌فرض Qt برای selectRow ستون را با
+    logicalIndexAt(viewport().width()) پیدا می‌کند؛ در چیدمانِ راست‌به‌چپ (RTL) —
+    که چیدمانِ همیشگیِ این برنامه است، نه فقط تست‌ها — این متد -۱ برمی‌گرداند و
+    در نتیجه selectRow اصلاً هیچ سطری را انتخاب نمی‌کند و سیگنال
+    itemSelectionChanged هم منتشر نمی‌شود. این یک باگِ واقعی در اجرای عادیِ
+    برنامه است (نه فقط در رندر offscreen محیط تست)؛ پس این بازنویسیِ حداقلی —
+    که همان انتخاب را مستقیماً از طریق selectionModel انجام می‌دهد — را حذف نکنید.
     """
 
     def selectRow(self, row):
@@ -270,7 +274,8 @@ class KeyActivitiesPage(QWidget):
             select_id = self._current_id
         self._refresh_combo(self.cmb_category,
                             [(c, c) for c in svc.category_suggestions(self.db)])
-        query = self.db.query(KeyActivity)
+        # eager-load به‌روزرسانی‌ها تا یک پرس‌وجوی شبکه‌ای جدا برای هر کار لازم نشود
+        query = self.db.query(KeyActivity).options(selectinload(KeyActivity.updates))
         if self.admin:
             owner_ids = {tid for (tid,) in self.db.query(KeyActivity.technician_id).distinct()}
             techs = self.db.query(Technician).order_by(Technician.full_name).all()
@@ -497,10 +502,14 @@ class KeyActivitiesPage(QWidget):
             self, "ذخیره فایل اکسل", default_filename(rng), "Excel Files (*.xlsx)")
         if not path:
             return
+        owner = self.technician
+        if self.admin:
+            # اگر ادمین فیلتر «ثبت‌کننده» را زده باشد، شیت جمع‌بندی همان فرد را نام ببرد
+            owner_id = self.cmb_owner.currentData() if self.cmb_owner is not None else None
+            owner = self.db.get(Technician, owner_id) if owner_id is not None else None
         try:
             export_key_activities_to_excel(
-                path, self.shown, rng,
-                owner=None if self.admin else self.technician, show_owner=self.admin)
+                path, self.shown, rng, owner=owner, show_owner=self.admin)
             QMessageBox.information(self, "موفق", f"فایل اکسل ذخیره شد:\n{path}")
         except Exception as exc:
             QMessageBox.critical(self, "خطا", f"خطا در ایجاد فایل اکسل:\n{exc}")
