@@ -1,7 +1,7 @@
 """ویجت‌های کمکی مشترک."""
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLineEdit, QToolButton
 from PySide6.QtGui import QIntValidator
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 
 
 class CountStepper(QWidget):
@@ -14,6 +14,9 @@ class CountStepper(QWidget):
     """
 
     valueChanged = Signal(int)
+    # ماوس روی شمارنده آمد یا فیلدش فوکوس گرفت؛ صفحه ردیفِ صاحبش را پررنگ می‌کند
+    # تا معلوم باشد این عدد مال کدام خدمت است.
+    activated = Signal()
 
     def __init__(self, minimum=0, maximum=999, parent=None):
         super().__init__(parent)
@@ -28,6 +31,7 @@ class CountStepper(QWidget):
         self.edit.setValidator(QIntValidator(minimum, maximum, self))
         self.edit.setAlignment(Qt.AlignCenter)
         self.edit.textChanged.connect(lambda *_: self.valueChanged.emit(self.value()))
+        self.edit.installEventFilter(self)
 
         buttons = QVBoxLayout()
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -49,6 +53,15 @@ class CountStepper(QWidget):
 
         layout.addWidget(self.edit, 1)
         layout.addLayout(buttons)
+
+    def enterEvent(self, event):
+        self.activated.emit()
+        super().enterEvent(event)
+
+    def eventFilter(self, obj, event):
+        if obj is self.edit and event.type() == QEvent.FocusIn:
+            self.activated.emit()
+        return super().eventFilter(obj, event)
 
     def value(self) -> int:
         try:

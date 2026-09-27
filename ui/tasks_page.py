@@ -99,6 +99,7 @@ class TasksPage(QWidget):
         self.tree.setColumnCount(2)
         self.tree.setHeaderLabels(["عنوان خدمت", "نحوه‌ی ثبت"])
         self.tree.setColumnWidth(0, 520)
+        self.tree.setAlternatingRowColors(True)
         self.tree.itemDoubleClicked.connect(lambda *_: self.rename_task())
         layout.addWidget(self.tree)
 

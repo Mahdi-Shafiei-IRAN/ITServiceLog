@@ -21,8 +21,14 @@ LIGHT = {
     "surface":       "#FFFFFF",
     "surface_alt":   "#F8FAFC",
     "surface_muted": "#F1F5F9",
-    "border":        "#E2E8F0",
-    "border_strong": "#CBD5E1",
+    # حاشیه‌ها عمداً پررنگ‌ترند؛ حاشیه‌ی خیلی کم‌رنگ باعث می‌شد محدوده‌ی ردیف‌ها و
+    # ورودی‌ها دیده نشود و تعدادِ خدمتِ اشتباه بالا برود.
+    "border":        "#CBD5E1",
+    "border_strong": "#94A3B8",
+    "grid":          "#E2E8F0",   # خط جداکننده‌ی ردیف‌های جدول/درخت
+    "row_alt":       "#F1F5F9",   # ردیف‌های یکی‌درمیان
+    "row_hover":     "#E3ECFB",
+    "disabled_bg":   "#E2E8F0",
     "text":          "#1E293B",
     "text_muted":    "#64748B",
     "primary":       "#2563EB",
@@ -53,8 +59,12 @@ DARK = {
     "surface":       "#1E293B",
     "surface_alt":   "#243449",
     "surface_muted": "#334155",
-    "border":        "#334155",
-    "border_strong": "#475569",
+    "border":        "#475569",
+    "border_strong": "#64748B",
+    "grid":          "#334155",
+    "row_alt":       "#28374F",
+    "row_hover":     "#33466A",
+    "disabled_bg":   "#334155",
     "text":          "#E2E8F0",
     "text_muted":    "#94A3B8",
     "primary":       "#3B82F6",
@@ -146,7 +156,7 @@ QPushButton {
 }
 QPushButton:hover   { background-color: %(primary_hover)s; }
 QPushButton:pressed { background-color: %(primary_press)s; }
-QPushButton:disabled { background-color: %(border_strong)s; color: %(text_muted)s; }
+QPushButton:disabled { background-color: %(disabled_bg)s; color: %(text_muted)s; }
 
 QPushButton[variant="success"] { background-color: %(success)s; }
 QPushButton[variant="success"]:hover { background-color: %(success_hover)s; }
@@ -353,15 +363,21 @@ QTabBar::tab:selected { color: %(primary)s; background-color: %(surface)s; }
 /* ---------- جدول‌ها ---------- */
 QTableWidget, QTableView {
     background-color: %(surface)s;
-    alternate-background-color: %(surface_alt)s;
+    alternate-background-color: %(row_alt)s;
     color: %(text)s;
     border: 1px solid %(border)s;
     border-radius: 12px;
-    gridline-color: %(border)s;
+    gridline-color: %(grid)s;
     selection-background-color: %(selection_bg)s;
     selection-color: %(selection_text)s;
 }
 QTableWidget::item, QTableView::item { padding: 6px; }
+QTableWidget::item:hover, QTableView::item:hover { background-color: %(row_hover)s; }
+/* بعد از hover، تا ردیفِ انتخاب‌شده زیر ماوس هم رنگ انتخاب را نگه دارد */
+QTableWidget::item:selected, QTableView::item:selected {
+    background-color: %(selection_bg)s;
+    color: %(selection_text)s;
+}
 QHeaderView::section {
     background-color: %(surface_muted)s;
     color: %(text_muted)s;
@@ -375,13 +391,15 @@ QTableCornerButton::section { background-color: %(surface_muted)s; border: none;
 /* ---------- درخت‌ها ---------- */
 QTreeWidget, QTreeView {
     background-color: %(surface)s;
+    alternate-background-color: %(row_alt)s;
     color: %(text)s;
     border: 1px solid %(border)s;
     border-radius: 12px;
     padding: 6px;
 }
-QTreeView::item { padding: 5px; border-radius: 6px; }
-QTreeView::item:hover    { background-color: %(surface_alt)s; }
+/* هر ردیف یک خط جداکننده دارد تا مرز ردیف‌ها مشخص باشد */
+QTreeView::item { padding: 5px; border-bottom: 1px solid %(grid)s; }
+QTreeView::item:hover    { background-color: %(row_hover)s; }
 QTreeView::item:selected { background-color: %(selection_bg)s; color: %(selection_text)s; }
 
 /* ---------- اسکرول‌بارها ---------- */
