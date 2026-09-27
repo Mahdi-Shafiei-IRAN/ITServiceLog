@@ -41,6 +41,14 @@ class Technician(Base):
             return [DEPT_IT, DEPT_SITE]
         return [self.department or DEPT_IT]
 
+    def can_use_key_activities(self):
+        """اجازه‌ی ثبت در تبِ «کارهای شاخص IT».
+
+        مدیرها همیشه دسترسی دارند (بدون نیاز به تیک)؛ بقیه فقط با تیکِ
+        «ثبت کارهای شاخص» در «مدیریت کاربران IT».
+        """
+        return self.role == "Administrator" or bool(self.can_log_key_activities)
+
 
 class SystemDevice(Base):
     __tablename__ = 'systems'

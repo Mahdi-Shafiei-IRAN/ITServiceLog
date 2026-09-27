@@ -72,7 +72,8 @@ def test_add_update_from_detail_panel(qapp, db, owner, dialogs):
     assert act.updates[0].author_name_snapshot == owner.full_name
     assert page.txt_update.text() == ""
     assert page.current is not None and page.current.id == act.id
-    assert page.lst_timeline.count() == 1
+    assert len(page.timeline_items) == 1
+    assert "استوریج نصب شد" in page.timeline.toPlainText()
 
 
 def test_empty_update_text_is_rejected(qapp, db, owner, dialogs):
@@ -187,6 +188,45 @@ def test_admin_export_with_owner_filter_names_that_owner(qapp, db, owner, other,
     summary = {ws.cell(row=r, column=1).value: ws.cell(row=r, column=2).value
               for r in range(2, ws.max_row + 1)}
     assert summary["ثبت‌کننده"] == other.full_name
+
+
+def test_owner_empty_state_explains_how_to_start(qapp, db, owner, dialogs):
+    page = _page(db, owner)
+    assert page.list_stack.currentWidget() is page.lbl_empty
+    assert "+ کار شاخص جدید" in page.lbl_empty.text()
+
+
+def test_admin_empty_state_explains_how_to_grant_access(qapp, db, admin, dialogs):
+    page = _page(db, admin, admin=True)
+    assert page.list_stack.currentWidget() is page.lbl_empty
+    assert "مدیریت کاربران IT" in page.lbl_empty.text()
+
+
+def test_filtered_out_state_differs_from_nothing_recorded(qapp, db, owner, dialogs):
+    _add(db, owner, "کار قدیمی", start_date=date.today() - timedelta(days=90),
+         status=KEY_STATUS_DONE, progress=100, end_date=date.today() - timedelta(days=80))
+    page = _page(db, owner)
+    assert page.list_stack.currentWidget() is page.table
+    page.period.set_key("today")
+    assert page.shown == []
+    assert page.list_stack.currentWidget() is page.lbl_empty
+    assert "همه‌ی زمان‌ها" in page.lbl_empty.text()
+
+
+def test_admin_owner_filter_lists_admins_without_flag(qapp, db, owner, other, admin, dialogs):
+    page = _page(db, admin, admin=True)
+    ids = [page.cmb_owner.itemData(i) for i in range(1, page.cmb_owner.count())]
+    assert admin.id in ids          # مدیر همیشه می‌تواند ثبت کند
+    assert owner.id in ids          # تیک دارد
+    assert other.id not in ids      # نه تیک دارد، نه کاری ثبت کرده
+
+
+def test_status_column_is_colored(qapp, db, owner, dialogs):
+    _add(db, owner, "باز")
+    page = _page(db, owner)
+    item = page.table.item(0, page._status_col)
+    assert item.text() == KEY_STATUS_IN_PROGRESS
+    assert item.font().bold()
 
 
 def _row_of(page, act):

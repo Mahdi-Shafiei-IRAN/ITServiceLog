@@ -29,6 +29,30 @@ def test_custom_range_is_ordered():
     assert period_range("custom", TODAY, b, a) == (b, a)
 
 
+def test_preset_shows_the_range_it_applies(qapp):
+    """پیش‌تر در «این ماه» کادرهای از/تا تاریخِ ثابتِ «۳۰ روز پیش» را نشان می‌دادند،
+    در حالی که فیلتر از اول ماه اعمال می‌شد."""
+    w = PeriodFilter(default="this_month")
+    rng = w.date_range()
+    assert (w.date_from.date().toPython(), w.date_to.date().toPython()) == rng
+    w.set_key("last_week")
+    assert (w.date_from.date().toPython(), w.date_to.date().toPython()) == w.date_range()
+
+
+def test_all_time_hides_dates(qapp):
+    w = PeriodFilter(default="all")
+    assert w.date_from.isHidden() and w.date_to.isHidden()
+    w.set_key("custom")
+    assert not w.date_from.isHidden() and not w.date_to.isHidden()
+
+
+def test_switching_to_custom_starts_from_the_shown_range(qapp):
+    w = PeriodFilter(default="last_month")
+    shown = w.date_range()
+    w.set_key("custom")
+    assert w.date_range() == shown
+
+
 def test_widget_default_and_custom_toggle(qapp):
     w = PeriodFilter(default="this_month")
     assert w.key() == "this_month"

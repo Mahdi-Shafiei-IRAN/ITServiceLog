@@ -52,9 +52,13 @@ class TechniciansPage(QWidget):
             self.cmb_dept.addItem(label, key)
         self.cmb_dept.addItem("هر دو بخش", "BOTH")
 
-        # اجازه‌ی ثبت در تبِ «کارهای شاخص IT» (مستقل از نقش)
+        # اجازه‌ی ثبت در تبِ «کارهای شاخص IT». مدیرها همیشه دارند (تیک قفل می‌شود)؛
+        # _key_flag مقدارِ واقعیِ تیک را نگه می‌دارد تا با عوض کردن نقش گم نشود.
+        self._key_flag = False
         self.chk_key_activities = QCheckBox("ثبت کارهای شاخص")
-        self.chk_key_activities.setToolTip("این کاربر تبِ «کارهای شاخص IT» را می‌بیند و در آن ثبت می‌کند.")
+        self.chk_key_activities.toggled.connect(self._on_key_toggled)
+        self.cmb_role.currentTextChanged.connect(self._sync_key_checkbox)
+        self._sync_key_checkbox()
 
         btn_add = QPushButton("ثبت / ذخیره")
         btn_add.setCursor(Qt.PointingHandCursor)
@@ -109,7 +113,28 @@ class TechniciansPage(QWidget):
             self.table.setItem(row, 4, QTableWidgetItem("مدیر" if t.role == "Administrator" else "کارشناس"))
             dept_label = {"BOTH": "هر دو بخش"}.get(t.department) or dict(DEPARTMENTS).get(t.department, "واحد IT")
             self.table.setItem(row, 5, QTableWidgetItem(dept_label))
-            self.table.setItem(row, 6, QTableWidgetItem("✓" if t.can_log_key_activities else "–"))
+            if t.role == "Administrator":
+                key_label = "✓ (مدیر)"
+            else:
+                key_label = "✓" if t.can_log_key_activities else "–"
+            self.table.setItem(row, 6, QTableWidgetItem(key_label))
+
+    def _on_key_toggled(self, checked):
+        # تیکِ قفل‌شده‌ی مدیر، تیکِ واقعیِ کاربر را عوض نمی‌کند
+        if self.chk_key_activities.isEnabled():
+            self._key_flag = checked
+
+    def _sync_key_checkbox(self, *_):
+        """برای نقش مدیر تیک زده و قفل می‌شود؛ برای بقیه همان مقدار واقعی برمی‌گردد."""
+        is_admin = self.cmb_role.currentText() == "Administrator"
+        self.chk_key_activities.setEnabled(not is_admin)
+        self.chk_key_activities.blockSignals(True)
+        self.chk_key_activities.setChecked(True if is_admin else self._key_flag)
+        self.chk_key_activities.blockSignals(False)
+        self.chk_key_activities.setToolTip(
+            "مدیرها همیشه به تبِ «کارهای شاخص IT» دسترسی دارند." if is_admin else
+            "این کاربر تبِ «کارهای شاخص IT» را می‌بیند و در آن ثبت می‌کند "
+            "(از ورود بعدی‌اش فعال می‌شود).")
 
     def _selected_row(self):
         sel = self.table.selectionModel().selectedRows()
@@ -129,10 +154,11 @@ class TechniciansPage(QWidget):
         self.txt_user.setText(t.username)
         self.txt_pass.clear()
         self.txt_pass.setPlaceholderText("برای حفظ رمز فعلی خالی بگذارید...")
+        self._key_flag = bool(t.can_log_key_activities)
         self.cmb_role.setCurrentText(t.role)
         idx = self.cmb_dept.findData(t.department or "IT")
         self.cmb_dept.setCurrentIndex(idx if idx >= 0 else 0)
-        self.chk_key_activities.setChecked(bool(t.can_log_key_activities))
+        self._sync_key_checkbox()
         self.lbl_mode.setText(f"حالت: ویرایش کارشناس «{t.full_name}» (#{t.id})")
 
     def clear_form(self):
@@ -141,9 +167,10 @@ class TechniciansPage(QWidget):
         self.txt_name.clear(); self.txt_ext.clear()
         self.txt_user.clear(); self.txt_pass.clear()
         self.txt_pass.setPlaceholderText("رمز عبور...")
+        self._key_flag = False
         self.cmb_role.setCurrentIndex(0)
         self.cmb_dept.setCurrentIndex(0)
-        self.chk_key_activities.setChecked(False)
+        self._sync_key_checkbox()
         # بدون سیگنال، تا on_row_selected فرم را دوباره از ردیفِ فعلی پر نکند
         self.table.blockSignals(True)
         self.table.clearSelection()

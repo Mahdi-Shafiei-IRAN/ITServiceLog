@@ -5,33 +5,73 @@
 هر دو حالت نوار خلاصه‌ی بازه و خروجی اکسل دارند. همه‌ی عددها از
 services.key_activity_service می‌آیند تا با فایل اکسل یکی باشند.
 """
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QComboBox, QTableWidget, QTableWidgetItem,
-                               QHeaderView, QAbstractItemView, QSplitter, QFrame,
-                               QListWidget, QSpinBox, QDateEdit, QMessageBox, QFileDialog,
-                               QProgressBar)
+from html import escape
+
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
+                               QLineEdit, QPushButton, QComboBox, QTableWidget,
+                               QTableWidgetItem, QHeaderView, QAbstractItemView, QSplitter,
+                               QFrame, QSpinBox, QDateEdit, QMessageBox, QFileDialog,
+                               QProgressBar, QStackedWidget, QScrollArea, QTextBrowser)
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt, QDate, QItemSelection, QItemSelectionModel
 from sqlalchemy.orm import selectinload
 
 from database.models import (KeyActivity, Technician, KEY_STATUSES, KEY_STATUS_DONE,
-                             KEY_STATUS_IN_PROGRESS, KEY_PRIORITIES, KEY_PRIORITY_TOP)
+                             KEY_STATUS_IN_PROGRESS, KEY_STATUS_PLANNED, KEY_STATUS_ON_HOLD,
+                             KEY_STATUS_CANCELLED, KEY_PRIORITIES, KEY_PRIORITY_NORMAL,
+                             KEY_PRIORITY_HIGH, KEY_PRIORITY_TOP)
 from reports.key_activities_exporter import export_key_activities_to_excel, default_filename
 from services import key_activity_service as svc
 from ui.key_activity_dialog import KeyActivityDialog
 from ui.period_filter import PeriodFilter
-from ui.theme import theme
+from ui.theme import theme, set_tone, tone_color
 
+# (کلید خلاصه، عنوان، رنگ)
 _STATS = [
-    ("done_in_period", "انجام‌شده در بازه"),
-    ("in_progress", "در حال انجام"),
-    ("started_in_period", "شروع‌شده در بازه"),
-    ("updates_in_period", "به‌روزرسانی‌ها"),
+    ("done_in_period", "انجام‌شده در بازه", "success"),
+    ("in_progress", "در حال انجام", "primary"),
+    ("started_in_period", "شروع‌شده در بازه", "warning"),
+    ("updates_in_period", "به‌روزرسانی‌ها", None),
 ]
+
+STATUS_TONES = {
+    KEY_STATUS_PLANNED: "muted",
+    KEY_STATUS_IN_PROGRESS: "primary",
+    KEY_STATUS_DONE: "success",
+    KEY_STATUS_ON_HOLD: "warning",
+    KEY_STATUS_CANCELLED: "danger",
+}
+PRIORITY_TONES = {
+    KEY_PRIORITY_NORMAL: "muted",
+    KEY_PRIORITY_HIGH: "warning",
+    KEY_PRIORITY_TOP: "danger",
+}
+
+_EMPTY_OWNER = ("هنوز کار شاخصی ثبت نکرده‌اید.\n\n"
+                "با دکمه‌ی «+ کار شاخص جدید» اولین کار را ثبت کنید — هم کارهای یک‌روزه\n"
+                "(مثل رفع یک قطعی) و هم پروژه‌های چندهفته‌ای که پیشرفتشان را به‌مرور ثبت می‌کنید.")
+_EMPTY_ADMIN = ("هنوز هیچ کار شاخصی ثبت نشده است.\n\n"
+                "مدیرها (Administrator) همیشه تب «کارهای شاخص IT» را برای ثبت دارند.\n"
+                "برای اینکه کاربر دیگری هم بتواند ثبت کند، در «مدیریت کاربران IT»\n"
+                "تیک «ثبت کارهای شاخص» را برایش بزنید (پس از ورود دوباره‌ی او فعال می‌شود).")
+_EMPTY_FILTERED = ("در این بازه یا با این فیلترها کاری پیدا نشد.\n\n"
+                   "بازه‌ی زمانی را به «همه‌ی زمان‌ها» تغییر دهید یا فیلترها را پاک کنید.")
 
 
 def _dt(d):
     return d.strftime("%Y/%m/%d") if d else "-"
+
+
+def _transparent(widget):
+    """ظرفی که داخل کارت/سلول است نباید رنگِ پس‌زمینه‌ی صفحه را بکشد."""
+    widget.setObjectName("Transparent")
+    return widget
+
+
+def _chip():
+    lbl = QLabel("")
+    lbl.setObjectName("Chip")
+    return lbl
 
 
 class _ActivityTable(QTableWidget):
@@ -67,11 +107,14 @@ class KeyActivitiesPage(QWidget):
         self.shown = []
         self.current = None
         self._current_id = None  # شناسه‌ی ساده؛ چون self.current بعد از commit/rollback expire می‌شود
+        self.timeline_items = []  # به‌روزرسانی‌های کارِ انتخاب‌شده، به همان ترتیب نمایش
         self.btn_new = None
         self.update_box = None
         self.cmb_owner = None
         self.setup_ui()
         self.load_data()
+        # رنگ‌های جدول (وضعیت/اهمیت) و خط زمانی از پالت می‌آیند؛ با عوض شدن تم دوباره بکش
+        theme.changed.connect(self._on_theme_changed)
 
     # ------------------------------------------------------------------ UI
     def setup_ui(self):
@@ -80,30 +123,46 @@ class KeyActivitiesPage(QWidget):
         layout.setSpacing(12)
 
         head = QHBoxLayout()
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
         title = QLabel("گزارش کارهای شاخص" if self.admin else "کارهای شاخص IT")
         title.setObjectName("PageTitle")
-        head.addWidget(title)
-        head.addStretch()
+        subtitle = QLabel(
+            "کارهای شاخص همه‌ی همکاران — فقط‌خواندنی؛ برای گزارش دوره‌ای خروجی اکسل بگیرید."
+            if self.admin else
+            "کارهای مهم خود را آزادانه ثبت کنید، پیشرفتشان را به‌روز کنید و برای گزارش به "
+            "مدیریت خروجی اکسل بگیرید.")
+        subtitle.setObjectName("Muted")
+        subtitle.setWordWrap(True)
+        title_box.addWidget(title)
+        title_box.addWidget(subtitle)
+        head.addLayout(title_box, 1)
         if not self.admin:
             self.btn_new = QPushButton("+ کار شاخص جدید")
             self.btn_new.setProperty("variant", "success")
             self.btn_new.setCursor(Qt.PointingHandCursor)
             self.btn_new.clicked.connect(self.new_activity)
-            head.addWidget(self.btn_new)
+            head.addWidget(self.btn_new, 0, Qt.AlignTop)
         layout.addLayout(head)
 
         # نوار خلاصه‌ی بازه (همان عددهای شیت «جمع‌بندی»)
         strip = QHBoxLayout()
+        strip.setSpacing(12)
         self.stat_labels = {}
-        for key, caption in _STATS:
+        for key, caption, tone in _STATS:
             card = QFrame()
             card.setObjectName("Card")
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(14, 10, 14, 10)
+            card_layout.setSpacing(0)
             value = QLabel("0")
-            value.setObjectName("SectionTitle")
+            value.setObjectName("StatValue")
+            value.setAlignment(Qt.AlignCenter)
+            if tone:
+                value.setProperty("tone", tone)
             cap = QLabel(caption)
             cap.setObjectName("Muted")
+            cap.setAlignment(Qt.AlignCenter)
             card_layout.addWidget(value)
             card_layout.addWidget(cap)
             self.stat_labels[key] = value
@@ -113,6 +172,7 @@ class KeyActivitiesPage(QWidget):
         bar = QHBoxLayout()
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("جستجو در عنوان، شرح، نتیجه و به‌روزرسانی‌ها...")
+        self.txt_search.setClearButtonEnabled(True)
         self.txt_search.textChanged.connect(self.apply_filters)
         bar.addWidget(QLabel("جستجو:"))
         bar.addWidget(self.txt_search, 2)
@@ -143,35 +203,19 @@ class KeyActivitiesPage(QWidget):
         btn_export = QPushButton("خروجی اکسل")
         btn_export.setProperty("variant", "success")
         btn_export.setCursor(Qt.PointingHandCursor)
+        btn_export.setToolTip("کارهای فعلیِ فهرست (با همین فیلترها و بازه) + گزارش پیشرفت + جمع‌بندی")
         btn_export.clicked.connect(self.export)
         bar2.addWidget(btn_refresh)
         bar2.addWidget(btn_export)
         layout.addLayout(bar2)
 
         splitter = QSplitter(Qt.Horizontal)
-        headers = self._headers()
-        self._progress_col = headers.index("پیشرفت")
-        self._priority_col = headers.index("اهمیت")
-        self.table = _ActivityTable()
-        self.table.setColumnCount(len(headers))
-        self.table.setHorizontalHeaderLabels(headers)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setAlternatingRowColors(True)
-        self.table.verticalHeader().setVisible(False)
-        header = self.table.horizontalHeader()
-        for i in range(len(headers)):
-            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.itemSelectionChanged.connect(self._on_selection)
-        if not self.admin:
-            self.table.doubleClicked.connect(lambda *_: self.edit_activity())
-        splitter.addWidget(self.table)
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(self._build_list())
         splitter.addWidget(self._build_detail())
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
-        # نسبت اولیه‌ی ۶۰/۴۰؛ وگرنه پنل جزئیات (فرم به‌روزرسانی) جا را می‌گیرد و عنوان‌ها بریده می‌شوند
+        # نسبت اولیه‌ی ۶۰/۴۰؛ وگرنه پنل جزئیات جا را می‌گیرد و عنوان‌ها بریده می‌شوند
         splitter.setSizes([600, 400])
         layout.addWidget(splitter, 1)
 
@@ -193,41 +237,137 @@ class KeyActivitiesPage(QWidget):
             cols.append("ثبت‌کننده")
         return cols + ["دسته", "اهمیت", "وضعیت", "پیشرفت", "شروع", "آخرین به‌روزرسانی"]
 
+    def _build_list(self):
+        """جدول کارها + راهنمای «هنوز چیزی ثبت نشده» به‌جای جدول خالی."""
+        headers = self._headers()
+        self._progress_col = headers.index("پیشرفت")
+        self._priority_col = headers.index("اهمیت")
+        self._status_col = headers.index("وضعیت")
+        self.table = _ActivityTable()
+        self.table.setColumnCount(len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setAlternatingRowColors(True)
+        self.table.setShowGrid(False)
+        self.table.verticalHeader().setVisible(False)
+        self.table.verticalHeader().setDefaultSectionSize(38)
+        header = self.table.horizontalHeader()
+        for i in range(len(headers)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)
+        header.setSectionResizeMode(self._progress_col, QHeaderView.Fixed)
+        self.table.setColumnWidth(self._progress_col, 120)
+        # ResizeToContents عرض تاریخ را با padding تم کمی کم حساب می‌کند و رقم آخر بریده
+        # می‌شد؛ پس ستونِ «شروع» از روی اندازه‌ی واقعی فونت عرض ثابت می‌گیرد.
+        start_col = headers.index("شروع")
+        header.setSectionResizeMode(start_col, QHeaderView.Fixed)
+        self.table.setColumnWidth(
+            start_col, self.table.fontMetrics().horizontalAdvance("0000/00/00") + 36)
+        self.table.itemSelectionChanged.connect(self._on_selection)
+        if not self.admin:
+            self.table.doubleClicked.connect(lambda *_: self.edit_activity())
+
+        self.lbl_empty = QLabel("")
+        self.lbl_empty.setObjectName("EmptyState")
+        self.lbl_empty.setAlignment(Qt.AlignCenter)
+        self.lbl_empty.setWordWrap(True)
+
+        self.list_stack = QStackedWidget()
+        self.list_stack.addWidget(self.table)
+        self.list_stack.addWidget(self.lbl_empty)
+        return self.list_stack
+
     def _build_detail(self):
         panel = QFrame()
         panel.setObjectName("Card")
-        lay = QVBoxLayout(panel)
+        panel.setMinimumWidth(360)
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        # محتوای جزئیات در یک ناحیه‌ی اسکرول‌دار تا روی مانیتورهای کوچک هم جا شود
+        scroll = QScrollArea()
+        scroll.setObjectName("Transparent")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.viewport().setObjectName("Transparent")
+        body = _transparent(QWidget())
+        lay = QVBoxLayout(body)
         lay.setContentsMargins(16, 16, 16, 16)
         lay.setSpacing(8)
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+
+        # تا کاری انتخاب نشده، فقط همین راهنما (وسطِ پنل) دیده می‌شود
+        self.lbl_placeholder = QLabel("یک کار را از فهرست انتخاب کنید تا جزئیات و "
+                                      "تاریخچه‌ی پیشرفتش این‌جا نمایش داده شود.")
+        self.lbl_placeholder.setObjectName("Muted")
+        self.lbl_placeholder.setAlignment(Qt.AlignCenter)
+        self.lbl_placeholder.setWordWrap(True)
+        lay.addWidget(self.lbl_placeholder, 1)
 
         self.lbl_title = QLabel("")
         self.lbl_title.setObjectName("SectionTitle")
         self.lbl_title.setWordWrap(True)
+        lay.addWidget(self.lbl_title)
+
+        # چیپ‌های وضعیت / اهمیت / دسته + (در حالت صاحب کار) ویرایش و حذف
+        self.chip_row = _transparent(QWidget())
+        chips = QHBoxLayout(self.chip_row)
+        chips.setContentsMargins(0, 0, 0, 0)
+        chips.setSpacing(6)
+        self.chip_status = _chip()
+        self.chip_priority = _chip()
+        self.chip_category = _chip()
+        for c in (self.chip_status, self.chip_priority, self.chip_category):
+            chips.addWidget(c)
+        chips.addStretch()
+        if not self.admin:
+            self.btn_edit = QPushButton("ویرایش")
+            self.btn_edit.setProperty("variant", "ghost")
+            self.btn_edit.setCursor(Qt.PointingHandCursor)
+            self.btn_edit.setToolTip("ویرایش مشخصات کار (دوبار کلیک روی ردیف هم همین کار را می‌کند)")
+            self.btn_edit.clicked.connect(self.edit_activity)
+            self.btn_delete = QPushButton("حذف")
+            self.btn_delete.setProperty("variant", "danger")
+            self.btn_delete.setCursor(Qt.PointingHandCursor)
+            self.btn_delete.clicked.connect(self.delete_activity)
+            chips.addWidget(self.btn_edit)
+            chips.addWidget(self.btn_delete)
+        lay.addWidget(self.chip_row)
+
+        self.bar_progress = QProgressBar()
+        self.bar_progress.setObjectName("DetailProgress")
+        self.bar_progress.setRange(0, 100)
+        self.bar_progress.setFormat("پیشرفت %p٪")
+        lay.addWidget(self.bar_progress)
+
         self.lbl_meta = QLabel("")
         self.lbl_meta.setObjectName("Muted")
         self.lbl_meta.setWordWrap(True)
-        self.lbl_description = QLabel("")
-        self.lbl_description.setWordWrap(True)
-        self.lbl_description.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl_result = QLabel("")
-        self.lbl_result.setWordWrap(True)
-        self.lbl_result.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        for w in (self.lbl_title, self.lbl_meta, self.lbl_description, self.lbl_result):
+        lay.addWidget(self.lbl_meta)
+
+        self.lbl_description_head = self._field_label("شرح کار")
+        self.lbl_description = self._body_label()
+        self.lbl_result_head = self._field_label("نتیجه / دستاورد")
+        self.lbl_result = self._body_label()
+        for w in (self.lbl_description_head, self.lbl_description,
+                  self.lbl_result_head, self.lbl_result):
             lay.addWidget(w)
 
-        timeline_title = QLabel("تاریخچه‌ی به‌روزرسانی‌ها")
-        timeline_title.setObjectName("SectionTitle")
-        lay.addWidget(timeline_title)
-        self.lst_timeline = QListWidget()
-        self.lst_timeline.setWordWrap(True)
-        lay.addWidget(self.lst_timeline, 1)
-
+        # فرم ثبت پیشرفت پیش از تاریخچه، تا پرکاربردترین کار بدون اسکرول در دسترس باشد
         if not self.admin:
             self.update_box = QFrame()
+            self.update_box.setObjectName("SubCard")
             ul = QVBoxLayout(self.update_box)
-            ul.setContentsMargins(0, 0, 0, 0)
-            ul.setSpacing(6)
-            row = QHBoxLayout()
+            ul.setContentsMargins(12, 10, 12, 12)
+            ul.setSpacing(8)
+            ul.addWidget(self._field_label("ثبت پیشرفت جدید"))
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(8)
+            grid.setVerticalSpacing(6)
             self.date_update = QDateEdit()
             self.date_update.setCalendarPopup(True)
             self.date_update.setDisplayFormat("yyyy/MM/dd")
@@ -237,15 +377,18 @@ class KeyActivitiesPage(QWidget):
             self.spn_update_progress.setSuffix(" ٪")
             self.cmb_update_status = QComboBox()
             self.cmb_update_status.addItems(KEY_STATUSES)
-            row.addWidget(QLabel("تاریخ:"))
-            row.addWidget(self.date_update)
-            row.addWidget(QLabel("پیشرفت:"))
-            row.addWidget(self.spn_update_progress)
-            row.addWidget(QLabel("وضعیت:"))
-            row.addWidget(self.cmb_update_status, 1)
-            ul.addLayout(row)
+            grid.addWidget(QLabel("تاریخ:"), 0, 0)
+            grid.addWidget(self.date_update, 0, 1)
+            grid.addWidget(QLabel("پیشرفت:"), 0, 2)
+            grid.addWidget(self.spn_update_progress, 0, 3)
+            grid.addWidget(QLabel("وضعیت:"), 1, 0)
+            grid.addWidget(self.cmb_update_status, 1, 1, 1, 3)
+            grid.setColumnStretch(1, 1)
+            grid.setColumnStretch(3, 1)
+            ul.addLayout(grid)
             self.txt_update = QLineEdit()
             self.txt_update.setPlaceholderText("چه کاری انجام شد؟ (مثلاً: استوریج خریداری و نصب شد)")
+            self.txt_update.returnPressed.connect(self.add_update)
             ul.addWidget(self.txt_update)
             self.btn_add_update = QPushButton("ثبت به‌روزرسانی")
             self.btn_add_update.setCursor(Qt.PointingHandCursor)
@@ -253,22 +396,29 @@ class KeyActivitiesPage(QWidget):
             ul.addWidget(self.btn_add_update)
             lay.addWidget(self.update_box)
 
-            actions = QHBoxLayout()
-            self.btn_edit = QPushButton("ویرایش")
-            self.btn_edit.setProperty("variant", "ghost")
-            self.btn_edit.setCursor(Qt.PointingHandCursor)
-            self.btn_edit.clicked.connect(self.edit_activity)
-            self.btn_delete = QPushButton("حذف")
-            self.btn_delete.setProperty("variant", "danger")
-            self.btn_delete.setCursor(Qt.PointingHandCursor)
-            self.btn_delete.clicked.connect(self.delete_activity)
-            actions.addStretch()
-            actions.addWidget(self.btn_edit)
-            actions.addWidget(self.btn_delete)
-            lay.addLayout(actions)
+        self.lbl_timeline_head = self._field_label("تاریخچه‌ی پیشرفت (جدیدترین بالا)")
+        lay.addWidget(self.lbl_timeline_head)
+        self.timeline = QTextBrowser()
+        self.timeline.setObjectName("Timeline")
+        self.timeline.setOpenLinks(False)
+        self.timeline.setMinimumHeight(110)
+        lay.addWidget(self.timeline, 1)
 
         self._show_detail(None)
         return panel
+
+    @staticmethod
+    def _field_label(text):
+        lbl = QLabel(text)
+        lbl.setObjectName("FieldLabel")
+        return lbl
+
+    @staticmethod
+    def _body_label():
+        lbl = QLabel("")
+        lbl.setWordWrap(True)
+        lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        return lbl
 
     # ------------------------------------------------------------ داده‌ها
     def load_data(self, select_id=None):
@@ -282,7 +432,8 @@ class KeyActivitiesPage(QWidget):
             owner_ids = {tid for (tid,) in self.db.query(KeyActivity.technician_id).distinct()}
             techs = self.db.query(Technician).order_by(Technician.full_name).all()
             self._refresh_combo(self.cmb_owner, [(t.full_name, t.id) for t in techs
-                                                 if t.can_log_key_activities or t.id in owner_ids])
+                                                 if (t.is_active and t.can_use_key_activities())
+                                                 or t.id in owner_ids])
         else:
             query = query.filter(KeyActivity.technician_id == self.technician.id)
         self.all = query.all()
@@ -323,7 +474,6 @@ class KeyActivitiesPage(QWidget):
         t.blockSignals(True)
         t.clearSelection()
         t.setRowCount(len(self.shown))
-        danger = QColor(theme.palette["danger"])
         for row, a in enumerate(self.shown):
             values = [a.title]
             if self.admin:
@@ -334,22 +484,57 @@ class KeyActivitiesPage(QWidget):
                 item = QTableWidgetItem(str(value))
                 item.setTextAlignment((Qt.AlignRight if col == 0 else Qt.AlignCenter)
                                       | Qt.AlignVCenter)
-                if a.priority == KEY_PRIORITY_TOP:
-                    if col == 0:
+                if col == 0:
+                    item.setToolTip(a.title)
+                    if a.priority == KEY_PRIORITY_TOP:
                         font = item.font()
                         font.setBold(True)
                         item.setFont(font)
-                    elif col == self._priority_col:
-                        item.setForeground(danger)
+                elif col == self._status_col:
+                    self._paint_tone(item, STATUS_TONES.get(a.status))
+                elif col == self._priority_col and a.priority != KEY_PRIORITY_NORMAL:
+                    self._paint_tone(item, PRIORITY_TONES.get(a.priority))
                 t.setItem(row, col, item)
-            bar = QProgressBar()
-            bar.setRange(0, 100)
-            bar.setValue(a.progress or 0)
-            bar.setFormat("%p٪")
-            bar.setAlignment(Qt.AlignCenter)
-            t.setCellWidget(row, self._progress_col, bar)
+            t.setCellWidget(row, self._progress_col, self._progress_cell(a))
         t.blockSignals(False)
         self.lbl_count.setText(f"تعداد کارهای نمایش‌داده‌شده: {len(self.shown)}")
+        self._update_empty_state()
+
+    @staticmethod
+    def _paint_tone(item, tone):
+        if not tone:
+            return
+        item.setForeground(QColor(tone_color(tone)))
+        font = item.font()
+        font.setBold(True)
+        item.setFont(font)
+
+    @staticmethod
+    def _progress_cell(activity):
+        """نوار پیشرفتِ باریک با فاصله از لبه‌ی سلول (سلول بی‌رنگ تا انتخاب ردیف دیده شود)."""
+        host = _transparent(QWidget())
+        lay = QHBoxLayout(host)
+        lay.setContentsMargins(10, 0, 10, 0)
+        bar = QProgressBar()
+        bar.setRange(0, 100)
+        bar.setValue(activity.progress or 0)
+        bar.setFormat("%p٪")
+        bar.setAlignment(Qt.AlignCenter)
+        if activity.status == KEY_STATUS_DONE:
+            bar.setProperty("state", "done")
+        lay.addWidget(bar)
+        return host
+
+    def _update_empty_state(self):
+        if self.shown:
+            self.list_stack.setCurrentWidget(self.table)
+            return
+        if self.all:
+            text = _EMPTY_FILTERED
+        else:
+            text = _EMPTY_ADMIN if self.admin else _EMPTY_OWNER
+        self.lbl_empty.setText(text)
+        self.list_stack.setCurrentWidget(self.lbl_empty)
 
     def _select(self, select_id):
         row = -1
@@ -369,34 +554,79 @@ class KeyActivitiesPage(QWidget):
         self._current_id = self.current.id if self.current is not None else None
         self._show_detail(self.current)
 
+    def _on_theme_changed(self, *_):
+        self.apply_filters()
+
     def _show_detail(self, a):
-        self.lst_timeline.clear()
-        if a is None:
-            self.lbl_title.setText("یک کار را از فهرست انتخاب کنید.")
-            for w in (self.lbl_meta, self.lbl_description, self.lbl_result):
-                w.setText("")
+        details = [self.lbl_title, self.chip_row, self.bar_progress, self.lbl_meta,
+                   self.lbl_description_head, self.lbl_description,
+                   self.lbl_result_head, self.lbl_result,
+                   self.lbl_timeline_head, self.timeline]
+        if self.update_box is not None:
+            details.append(self.update_box)
+        selected = a is not None
+        self.lbl_placeholder.setVisible(not selected)
+        for w in details:
+            w.setVisible(selected)
+        if not selected:
+            # فرمِ غیرفعال و دکمه‌های بی‌کار فقط شلوغی بود؛ کاملاً پنهان می‌شوند
+            self.timeline_items = []
             self._set_detail_enabled(False)
             return
+
         self.lbl_title.setText(a.title)
-        meta = [f"دسته: {a.category or '-'}", f"اهمیت: {a.priority or '-'}",
-                f"وضعیت: {a.status or '-'}", f"پیشرفت: {a.progress or 0}٪",
-                f"شروع: {_dt(a.start_date)}", f"اتمام: {_dt(a.end_date)}"]
+        self.chip_status.setText(a.status or "-")
+        set_tone(self.chip_status, STATUS_TONES.get(a.status, "muted"))
+        self.chip_priority.setText(f"اهمیت: {a.priority or '-'}")
+        set_tone(self.chip_priority, PRIORITY_TONES.get(a.priority, "muted"))
+        self.chip_category.setText(a.category or "بدون دسته")
+        set_tone(self.chip_category, "muted")
+
+        self.bar_progress.setValue(a.progress or 0)
+        bar_state = "done" if a.status == KEY_STATUS_DONE else ""
+        if self.bar_progress.property("state") != bar_state:
+            self.bar_progress.setProperty("state", bar_state)
+            self.bar_progress.style().unpolish(self.bar_progress)
+            self.bar_progress.style().polish(self.bar_progress)
+
+        meta = [f"شروع: {_dt(a.start_date)}", f"اتمام: {_dt(a.end_date)}"]
         if self.admin:
             meta.insert(0, f"ثبت‌کننده: {a.technician_name_snapshot or '-'}")
-        self.lbl_meta.setText("  •  ".join(meta))
-        self.lbl_description.setText(f"شرح: {a.description or '-'}")
-        self.lbl_result.setText(f"نتیجه: {a.result or '-'}")
-        for u in svc.timeline(a):
-            progress = f"{u.progress}٪" if u.progress is not None else "-"
-            self.lst_timeline.addItem(
-                f"{_dt(u.update_date)}  —  {progress}  —  {u.status or '-'}\n{u.text}")
-        if not a.updates:
-            self.lst_timeline.addItem("هنوز به‌روزرسانی‌ای ثبت نشده است.")
+        self.lbl_meta.setText("   •   ".join(meta))
+
+        self.lbl_description.setText(a.description or "")
+        self.lbl_result.setText(a.result or "")
+        for head, body in ((self.lbl_description_head, self.lbl_description),
+                           (self.lbl_result_head, self.lbl_result)):
+            has_text = bool(body.text())
+            head.setVisible(has_text)
+            body.setVisible(has_text)
+
+        self.timeline_items = svc.timeline(a)
+        self.timeline.setHtml(self._timeline_html(self.timeline_items))
+
         if not self.admin:
             self.spn_update_progress.setValue(a.progress or 0)
             self.cmb_update_status.setCurrentText(a.status or KEY_STATUS_IN_PROGRESS)
             self.date_update.setDate(QDate.currentDate())
             self._set_detail_enabled(True)
+
+    def _timeline_html(self, updates):
+        muted = theme.palette["text_muted"]
+        if not updates:
+            return (f'<p style="color:{muted};">هنوز به‌روزرسانی‌ای ثبت نشده است. '
+                    + ("" if self.admin else "از فرم «ثبت پیشرفت جدید» پایین همین پنل "
+                       "استفاده کنید.") + "</p>")
+        parts = []
+        for u in updates:
+            progress = f"{u.progress}٪" if u.progress is not None else "-"
+            color = tone_color(STATUS_TONES.get(u.status, "muted"))
+            parts.append(
+                f'<p style="margin:0;"><b>{_dt(u.update_date)}</b>'
+                f'&nbsp;&nbsp;<span style="color:{muted};">پیشرفت {progress}</span>'
+                f'&nbsp;&nbsp;<span style="color:{color};"><b>{escape(u.status or "-")}</b></span></p>'
+                f'<p style="margin:2px 0 12px 0;">{escape(u.text or "")}</p>')
+        return "".join(parts)
 
     def _set_detail_enabled(self, enabled):
         if self.admin:

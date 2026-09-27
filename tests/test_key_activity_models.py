@@ -24,6 +24,14 @@ def test_technician_flag_defaults_to_false(db):
     assert tech.can_log_key_activities is False
 
 
+def test_key_activities_access_rule(db, owner, other, admin):
+    assert admin.can_use_key_activities()       # مدیر بدون تیک
+    assert owner.can_use_key_activities()       # کارشناس با تیک
+    assert not other.can_use_key_activities()   # کارشناس بدون تیک
+    other.can_log_key_activities = None          # ردیف قدیمیِ NULL
+    assert not other.can_use_key_activities()
+
+
 def test_activity_defaults(db, owner):
     act = KeyActivity(technician_id=owner.id, title="راه‌اندازی سرور بکاپ")
     db.add(act)

@@ -33,10 +33,14 @@ def test_flagged_user_gets_entry_tab_after_daily_entry(db, owner, open_window):
     assert titles.index(OWNER_TAB) == 1   # owner فقط بخش IT دارد: تب ثبت روزانه، سپس این تب
 
 
-def test_admin_gets_report_tab_after_site_reports(db, admin, open_window):
+def test_admin_gets_entry_and_report_tabs_without_flag(db, admin, open_window):
+    """مدیر (مثلاً مدیر واحد IT) بدون هیچ تیکی هم باید بتواند کارهایش را ثبت کند؛
+    پیش‌تر فقط تب گزارشِ فقط‌خواندنی را می‌دید و جایی برای ثبت نداشت."""
+    assert not admin.can_log_key_activities
     titles = _titles(open_window(admin))
-    assert ADMIN_TAB in titles and OWNER_TAB not in titles
+    assert OWNER_TAB in titles and ADMIN_TAB in titles
     assert titles.index(ADMIN_TAB) == titles.index("گزارشات کلی واحد سایت") + 1
+    assert titles.index(OWNER_TAB) < titles.index("گزارش‌های من")
 
 
 def test_flagged_admin_gets_both_tabs(db, admin, open_window):
@@ -73,7 +77,24 @@ def test_selecting_flagged_user_checks_box(qapp, db, admin, owner, dialogs):
     page = TechniciansPage(db, admin)
     page.table.setCurrentCell(_row_of(page, owner), 0)
     assert page.chk_key_activities.isChecked()
-    assert page.table.item(_row_of(page, admin), 6).text() == "–"
+    assert page.chk_key_activities.isEnabled()
+    # مدیر همیشه دسترسی دارد و این در جدول هم روشن است
+    assert page.table.item(_row_of(page, admin), 6).text() == "✓ (مدیر)"
+
+
+def test_admin_role_locks_checkbox_on_without_losing_real_flag(qapp, db, admin, other, dialogs):
+    page = TechniciansPage(db, admin)
+    page.table.setCurrentCell(_row_of(page, admin), 0)
+    assert page.chk_key_activities.isChecked() and not page.chk_key_activities.isEnabled()
+
+    # کارشناسِ بدون تیک → اگر نقشش موقتاً مدیر شود تیک قفل می‌شود، و با برگشتن به
+    # کارشناس دوباره همان «بدون تیک» واقعی‌اش برمی‌گردد
+    page.table.setCurrentCell(_row_of(page, other), 0)
+    assert not page.chk_key_activities.isChecked() and page.chk_key_activities.isEnabled()
+    page.cmb_role.setCurrentText("Administrator")
+    assert page.chk_key_activities.isChecked() and not page.chk_key_activities.isEnabled()
+    page.cmb_role.setCurrentText("Technician")
+    assert not page.chk_key_activities.isChecked() and page.chk_key_activities.isEnabled()
 
 
 def test_null_key_activities_flag_hides_owner_tab_and_shows_dash(qapp, db, admin, open_window):

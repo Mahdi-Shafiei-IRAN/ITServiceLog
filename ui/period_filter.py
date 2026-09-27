@@ -63,12 +63,14 @@ class PeriodFilter(QWidget):
             self.combo.addItem(label, key)
         self.date_from = self._date_edit(QDate.currentDate().addDays(-30))
         self.date_to = self._date_edit(QDate.currentDate())
+        self.lbl_from = QLabel("از:")
+        self.lbl_to = QLabel("تا:")
 
         layout.addWidget(QLabel("بازه‌ی زمانی:"))
         layout.addWidget(self.combo)
-        layout.addWidget(QLabel("از:"))
+        layout.addWidget(self.lbl_from)
         layout.addWidget(self.date_from)
-        layout.addWidget(QLabel("تا:"))
+        layout.addWidget(self.lbl_to)
         layout.addWidget(self.date_to)
 
         self.set_key(default)
@@ -93,9 +95,23 @@ class PeriodFilter(QWidget):
         self._sync_enabled()
 
     def _sync_enabled(self):
-        custom = self.key() == "custom"
+        """تاریخ‌ها فقط در «بازه‌ی دلخواه» قابل تغییرند؛ در بقیه‌ی گزینه‌ها همان بازه‌ای
+        را نشان می‌دهند که واقعاً اعمال می‌شود (نه یک تاریخ ثابتِ قدیمی)."""
+        key = self.key()
+        custom = key == "custom"
         self.date_from.setEnabled(custom)
         self.date_to.setEnabled(custom)
+        if not custom:
+            rng = period_range(key, date.today())
+            if rng is not None:
+                for edit, value in zip((self.date_from, self.date_to), rng):
+                    edit.blockSignals(True)
+                    edit.setDate(QDate(value.year, value.month, value.day))
+                    edit.blockSignals(False)
+        # «همه‌ی زمان‌ها» تاریخی ندارد؛ نشان دادن از/تا فقط گمراه‌کننده است
+        show_dates = key != "all"
+        for w in (self.lbl_from, self.date_from, self.lbl_to, self.date_to):
+            w.setVisible(show_dates)
 
     def _on_key_changed(self, *_):
         self._sync_enabled()

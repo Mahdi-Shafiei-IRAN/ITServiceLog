@@ -68,8 +68,8 @@ class MainWindow(QMainWindow):
                 self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
 
-        # --- کارهای شاخص IT: فقط کاربرانی که تیکِ «ثبت کارهای شاخص» دارند ---
-        if self.technician.can_log_key_activities:
+        # --- کارهای شاخص IT: مدیرها همیشه؛ بقیه با تیکِ «ثبت کارهای شاخص» ---
+        if self.technician.can_use_key_activities():
             self.tab_key_activities = KeyActivitiesPage(self.db_session, self.technician)
             self.tabs.addTab(self.tab_key_activities, "کارهای شاخص IT")
 
