@@ -171,6 +171,8 @@ class KeyActivitiesPage(QWidget):
         splitter.addWidget(self._build_detail())
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
+        # نسبت اولیه‌ی ۶۰/۴۰؛ وگرنه پنل جزئیات (فرم به‌روزرسانی) جا را می‌گیرد و عنوان‌ها بریده می‌شوند
+        splitter.setSizes([600, 400])
         layout.addWidget(splitter, 1)
 
         self.lbl_count = QLabel("")
