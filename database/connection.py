@@ -66,22 +66,38 @@ def _migrate():
     مقداردهی پیش‌فرض فقط برای ستون‌هایی اجرا می‌شود که همین حالا اضافه شده‌اند؛
     بنابراین روی دیتابیسِ به‌روز هیچ نوشتنی انجام نمی‌شود و استارتاپ سریع می‌ماند
     (به‌ویژه روی PostgreSQL شبکه‌ای).
+
+    روی PostgreSQL، ALTER TABLE یک قفل ACCESS EXCLUSIVE می‌گیرد؛ اگر نسخه‌های
+    دیگرِ برنامه تراکنشِ نیمه‌باز روی همان جدول داشته باشند (idle in transaction)،
+    این قفل صف می‌کشد و کل شرکت پشت آن می‌ماند. برای همین یک lock_timeout کوتاه
+    می‌گذاریم تا به‌جای فریز کردن همه، فقط همین ALTER با خطای روشن شکست بخورد.
     """
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     # ستون‌های موجود هر جدول را یک‌بار می‌خوانیم (به‌جای هر ستون یک‌بار)
     table_cols = {t: {c["name"] for c in inspector.get_columns(t)} for t in existing_tables}
 
-    added = set()  # (table, column) هایی که تازه اضافه شدند
-    with engine.begin() as conn:
-        for table, column, ddl in _NEW_COLUMNS:
-            if table not in existing_tables or column in table_cols.get(table, ()):
-                continue
-            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
-            added.add((table, column))
-
-    if not added:
+    # از قبل مشخص می‌کنیم چه ستون‌هایی اضافه خواهند شد تا بدانیم قفلِ lock_timeout لازم است یا نه
+    to_add = [(table, column, ddl) for table, column, ddl in _NEW_COLUMNS
+             if table in existing_tables and column not in table_cols.get(table, ())]
+    if not to_add:
         return  # اسکیمای دیتابیس به‌روز است؛ نیازی به backfill نیست
+
+    is_postgres = engine.dialect.name == "postgresql"
+    added = set()  # (table, column) هایی که تازه اضافه شدند
+    try:
+        with engine.begin() as conn:
+            if is_postgres:
+                conn.execute(text("SET LOCAL lock_timeout = '5s'"))
+            for table, column, ddl in to_add:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                added.add((table, column))
+    except Exception as exc:
+        if is_postgres:
+            raise RuntimeError(
+                "به‌روزرسانی ساختار دیتابیس انجام نشد چون برنامه روی سیستم‌های دیگر باز است. "
+                "همه‌ی نسخه‌های باز برنامه را ببندید و دوباره اجرا کنید.") from exc
+        raise
 
     with engine.begin() as conn:
         if ("tasks", "department") in added:

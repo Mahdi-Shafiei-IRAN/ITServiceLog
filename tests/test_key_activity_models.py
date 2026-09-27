@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from sqlalchemy import create_engine, inspect, text
 
 import database.connection as connection
@@ -71,4 +72,38 @@ def test_migrate_adds_flag_column_to_old_database(tmp_path, monkeypatch):
     with old.connect() as conn:
         rows = conn.execute(text("SELECT username, can_log_key_activities FROM technicians")).all()
     assert rows == [("old", 0)]
+    old.dispose()
+
+
+def test_migrate_skips_lock_timeout_when_nothing_to_add(tmp_path, monkeypatch):
+    """روی دیتابیس به‌روز، حتی وقتی دیالکت postgresql تشخیص داده شود، کاری اجرا نمی‌شود."""
+    up_to_date = create_engine(f"sqlite:///{(tmp_path / 'uptodate.sqlite').as_posix()}")
+    Base.metadata.create_all(bind=up_to_date)
+    monkeypatch.setattr(connection, "engine", up_to_date)
+    monkeypatch.setattr(up_to_date.dialect, "name", "postgresql")
+
+    connection._migrate()  # نباید هیچ استثنایی بدهد (چون ستونی برای اضافه شدن نیست)
+    up_to_date.dispose()
+
+
+def test_migrate_wraps_postgres_alter_failure_in_persian_runtime_error(tmp_path, monkeypatch):
+    """قفل ACCESS EXCLUSIVE روی PostgreSQL باید با پیام فارسی روشن گزارش شود، نه استثنای خام."""
+    old = create_engine(f"sqlite:///{(tmp_path / 'old_pg.sqlite').as_posix()}")
+    with old.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE technicians (id INTEGER PRIMARY KEY, full_name VARCHAR(100) NOT NULL, "
+            "internal_extension VARCHAR(20), username VARCHAR(50) NOT NULL UNIQUE, "
+            "password_hash VARCHAR(128) NOT NULL, role VARCHAR(20), department VARCHAR(10), "
+            "is_active BOOLEAN)"))
+    Base.metadata.create_all(bind=old)
+    monkeypatch.setattr(connection, "engine", old)
+    monkeypatch.setattr(old.dialect, "name", "postgresql")
+
+    with pytest.raises(RuntimeError) as excinfo:
+        connection._migrate()
+    assert "همه‌ی نسخه‌های باز برنامه را ببندید" in str(excinfo.value)
+    assert excinfo.value.__cause__ is not None
+
+    insp = inspect(old)
+    assert "can_log_key_activities" not in {c["name"] for c in insp.get_columns("technicians")}
     old.dispose()
