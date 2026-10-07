@@ -68,10 +68,10 @@ class MainWindow(QMainWindow):
                 self.tabs.addTab(page, f"ثبت روزانه — {DEPT_LABELS.get(dept, dept)}")
             self.entry_tabs[dept] = page
 
-        # --- کارهای شاخص IT: مدیرها همیشه؛ بقیه با تیکِ «ثبت کارهای شاخص» ---
+        # --- کارهای شاخص من: مدیرها همیشه؛ بقیه با تیکِ «ثبت کارهای شاخص» ---
         if self.technician.can_use_key_activities():
             self.tab_key_activities = KeyActivitiesPage(self.db_session, self.technician)
-            self.tabs.addTab(self.tab_key_activities, "کارهای شاخص IT")
+            self.tabs.addTab(self.tab_key_activities, "کارهای شاخص من")
 
         # --- «گزارش‌های من»: یک تب با تب‌های داخلی (IT / سایت / نام‌دار) ---
         depts = self.technician.departments()
@@ -109,9 +109,9 @@ class MainWindow(QMainWindow):
             self.tab_admin_site = SiteReportsPage(self.db_session, technician=None, admin=True)
             self.tabs.addTab(self.tab_admin_site, "گزارشات کلی واحد سایت")
 
-            # گزارش کارهای شاخص IT: همه‌ی کاربران، فقط‌خواندنی
+            # گزارش کلی کارهای شاخص: همه‌ی کاربران، فقط‌خواندنی
             self.tab_admin_key = KeyActivitiesPage(self.db_session, self.technician, admin=True)
-            self.tabs.addTab(self.tab_admin_key, "گزارش کارهای شاخص")
+            self.tabs.addTab(self.tab_admin_key, "گزارش کلی کارهای شاخص")
 
             # داشبورد تنبل: یک جای‌گیرنده می‌گذاریم و نمودارها را فقط هنگام اولین باز شدن می‌سازیم
             self.tab_dashboard = None

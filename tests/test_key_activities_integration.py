@@ -5,8 +5,8 @@ from database.models import Technician
 from ui.main_window import MainWindow
 from ui.technicians_page import TechniciansPage
 
-OWNER_TAB = "کارهای شاخص IT"
-ADMIN_TAB = "گزارش کارهای شاخص"
+OWNER_TAB = "کارهای شاخص من"
+ADMIN_TAB = "گزارش کلی کارهای شاخص"
 
 
 @pytest.fixture

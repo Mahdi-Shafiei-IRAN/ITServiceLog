@@ -52,7 +52,7 @@ class TechniciansPage(QWidget):
             self.cmb_dept.addItem(label, key)
         self.cmb_dept.addItem("هر دو بخش", "BOTH")
 
-        # اجازه‌ی ثبت در تبِ «کارهای شاخص IT». مدیرها همیشه دارند (تیک قفل می‌شود)؛
+        # اجازه‌ی ثبت در تبِ «کارهای شاخص من». مدیرها همیشه دارند (تیک قفل می‌شود)؛
         # _key_flag مقدارِ واقعیِ تیک را نگه می‌دارد تا با عوض کردن نقش گم نشود.
         self._key_flag = False
         self.chk_key_activities = QCheckBox("ثبت کارهای شاخص")
@@ -132,8 +132,8 @@ class TechniciansPage(QWidget):
         self.chk_key_activities.setChecked(True if is_admin else self._key_flag)
         self.chk_key_activities.blockSignals(False)
         self.chk_key_activities.setToolTip(
-            "مدیرها همیشه به تبِ «کارهای شاخص IT» دسترسی دارند." if is_admin else
-            "این کاربر تبِ «کارهای شاخص IT» را می‌بیند و در آن ثبت می‌کند "
+            "مدیرها همیشه به تبِ «کارهای شاخص من» دسترسی دارند." if is_admin else
+            "این کاربر تبِ «کارهای شاخص من» را می‌بیند و در آن ثبت می‌کند "
             "(از ورود بعدی‌اش فعال می‌شود).")
 
     def _selected_row(self):
