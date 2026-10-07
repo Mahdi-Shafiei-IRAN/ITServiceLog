@@ -1,11 +1,11 @@
-r"""بکاپ روزانه‌ی دیتابیس سرور در یک فایل SQLite.
+r"""بکاپ روزانه‌ی دیتابیس PostgreSQL سرور در یک فایل SQL.
 
-خروجی یک دیتابیس کاملِ برنامه است (همان جدول‌ها و همان id ها)؛ پس:
-  • می‌شود مستقیم بازش کرد (DB Browser for SQLite یا خود برنامه با ITSERVICELOG_DB)
-  • برای برگرداندن روی سرور کافی است:
-        python scripts\migrate_to_postgres.py --source <فایل بکاپ> --force
+خروجی همان چیزی است که pg_dump به‌صورت متنی می‌دهد: ساخت جدول‌ها و ایندکس‌ها،
+همه‌ی ردیف‌ها با همان id ها و تنظیم sequence ها — همه داخل یک تراکنش. برای
+برگرداندن، روی یک دیتابیس خالی اجرا می‌شود (psql -f، pgAdmin یا scripts\restore_backup.py).
+برای گرفتن بکاپ به pg_dump یا نصب چیز اضافه‌ای روی سیستم نیاز نیست.
 
-هر روز یک فایل با تاریخ شمسی ساخته می‌شود (ITServiceLog_1405-07-15.sqlite) و فقط
+هر روز یک فایل با تاریخ شمسی ساخته می‌شود (ITServiceLog_1405-07-15.sql) و فقط
 `keep` فایلِ آخر نگه داشته می‌شود. بکاپ اول در فایل موقت نوشته و بررسی می‌شود؛
 تا بکاپ جدید سالم کامل نشده باشد، هیچ بکاپ قدیمی‌ای پاک نمی‌شود.
 
@@ -19,7 +19,9 @@ import time
 import traceback
 from datetime import datetime
 
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, select
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateIndex, CreateTable
 
 from database import config
 from database.models import Base
@@ -29,38 +31,67 @@ DEFAULT_DIR = r"D:\Backups\ITServiceLog"
 DEFAULT_KEEP = 3
 RETRIES = 3
 RETRY_WAIT_SECONDS = 300
-_NAME_RE = re.compile(r"^ITServiceLog_\d{4}-\d{2}-\d{2}\.sqlite$")
+INSERT_BATCH = 200
+_NAME_RE = re.compile(r"^ITServiceLog_\d{4}-\d{2}-\d{2}\.sql$")
+_END = "COMMIT;\n"
 
 
 def backup_filename(day):
-    return f"ITServiceLog_{jalali.fmt(day, '-')}.sqlite"
+    return f"ITServiceLog_{jalali.fmt(day, '-')}.sql"
 
 
-def _copy(source_url, dest_path):
-    """همه‌ی جدول‌ها را از دیتابیس منبع در یک فایل SQLite تازه کپی می‌کند."""
-    src = create_engine(source_url, future=True)
-    dst = create_engine(f"sqlite:///{dest_path}", future=True)
+def _pg_dialect():
+    """دیالکت PostgreSQL برای نوشتن مقادیر به‌صورت متن داخل دستورها.
+
+    فایل با standard_conforming_strings = on شروع می‌شود؛ پس بک‌اسلش نباید دوبرابر شود
+    (دیالکتِ بدون اتصال پیش‌فرض دوبرابرش می‌کند و متن‌ها هنگام برگرداندن خراب می‌شوند).
+    """
+    pg = postgresql.dialect()
+    pg._backslash_escapes = False
+    return pg
+
+
+def _sql(stmt, pg):
+    return str(stmt.compile(dialect=pg, compile_kwargs={"literal_binds": True})).strip() + ";\n"
+
+
+def _dump(source_url, dest_path, now):
+    """کل دیتابیس را به‌صورت یک فایل SQL قابل اجرا روی PostgreSQL می‌نویسد."""
+    pg = _pg_dialect()
+    tables = Base.metadata.sorted_tables
     counts = {}
+    src = create_engine(source_url, future=True)
     try:
-        Base.metadata.create_all(dst)
-        with src.connect() as s, dst.begin() as d:
-            for table in Base.metadata.sorted_tables:
-                rows = [dict(r._mapping) for r in s.execute(select(table))]
-                if rows:
-                    d.execute(table.insert(), rows)
+        with src.connect() as s, open(dest_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(f"-- ITServiceLog backup {jalali.fmt(now)} {now:%H:%M} ({now:%Y-%m-%d})\n"
+                    "-- Restore into an EMPTY database:\n"
+                    "--   psql -h <server> -U itapp -d <new_db> -f <this file>\n\n"
+                    "SET client_encoding = 'UTF8';\n"
+                    "SET standard_conforming_strings = on;\n"
+                    "BEGIN;\n\n")
+            for table in tables:
+                f.write(_sql(CreateTable(table), pg))
+                for index in sorted(table.indexes, key=lambda i: i.name):
+                    f.write(_sql(CreateIndex(index), pg))
+                f.write("\n")
+            for table in tables:
+                query = select(table).order_by(*table.primary_key.columns)
+                rows = [dict(r._mapping) for r in s.execute(query)]
                 counts[table.name] = len(rows)
-        # بررسی: تعداد ردیف‌های فایل باید با منبع یکی باشد و فایل سالم باشد
-        with dst.connect() as d:
-            for table in Base.metadata.sorted_tables:
-                n = d.execute(select(func.count()).select_from(table)).scalar()
-                if n != counts[table.name]:
-                    raise RuntimeError(f"row count mismatch in {table.name}: {n} != {counts[table.name]}")
-            ok = d.execute(text("PRAGMA integrity_check")).scalar()
-            if ok != "ok":
-                raise RuntimeError(f"integrity_check: {ok}")
+                for i in range(0, len(rows), INSERT_BATCH):
+                    f.write(_sql(table.insert().values(rows[i:i + INSERT_BATCH]), pg))
+                if "id" in table.c:
+                    # شماره‌ی بعدیِ id ها از همان جایی ادامه پیدا کند که روی سرور بود
+                    f.write(f"SELECT setval(pg_get_serial_sequence('{table.name}', 'id'), "
+                            f"COALESCE(MAX(id), 1), MAX(id) IS NOT NULL) FROM {table.name};\n")
+            f.write("\n" + _END)
     finally:
         src.dispose()
-        dst.dispose()
+    # بررسی: فایل تا انتها نوشته شده باشد
+    with open(dest_path, "rb") as f:
+        f.seek(-len(_END), os.SEEK_END)
+        if f.read() != _END.encode():
+            raise RuntimeError("backup file is incomplete")
     return counts
 
 
@@ -84,7 +115,7 @@ def backup_database(target_dir=DEFAULT_DIR, keep=DEFAULT_KEEP, source_url=None, 
     if os.path.exists(partial):
         os.remove(partial)
     try:
-        counts = _copy(source_url, partial)
+        counts = _dump(source_url, partial, now)
     except Exception:
         if os.path.exists(partial):
             os.remove(partial)

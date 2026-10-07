@@ -1,7 +1,7 @@
 import os
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from database.models import Base, Technician
@@ -15,26 +15,31 @@ def _source(tmp_path):
     Base.metadata.create_all(eng)
     with Session(eng) as s:
         s.add_all([Technician(full_name="الف", username="a", password_hash="x", role="Technician"),
-                   Technician(full_name="ب", username="b", password_hash="x", role="Technician")])
+                   Technician(full_name="ب", username="b", password_hash="x", role="Technician"),
+                   Technician(full_name=r"O'Brien \ IT", username="c", password_hash="x", role="Technician")])
         s.commit()
     eng.dispose()
     return url
 
 
 def test_filename_is_jalali():
-    assert bk.backup_filename(date(2026, 10, 7)) == "ITServiceLog_1405-07-15.sqlite"
+    assert bk.backup_filename(date(2026, 10, 7)) == "ITServiceLog_1405-07-15.sql"
 
 
-def test_backup_copies_rows(tmp_path):
+def test_backup_is_a_postgres_sql_dump(tmp_path):
     url = _source(tmp_path)
     out = tmp_path / "bk"
     path, counts, removed = bk.backup_database(str(out), 3, url, datetime(2026, 10, 7, 13))
-    assert os.path.basename(path) == "ITServiceLog_1405-07-15.sqlite"
-    assert counts["technicians"] == 2 and removed == []
-    eng = create_engine(f"sqlite:///{path}")
-    with eng.connect() as c:
-        assert c.execute(select(func.count()).select_from(Technician.__table__)).scalar() == 2
-    eng.dispose()
+    assert os.path.basename(path) == "ITServiceLog_1405-07-15.sql"
+    assert counts["technicians"] == 3 and removed == []
+    sql = open(path, encoding="utf-8").read()
+    assert "SET standard_conforming_strings = on;" in sql
+    assert "CREATE TABLE technicians" in sql and "id SERIAL NOT NULL" in sql
+    assert "setval(pg_get_serial_sequence('technicians', 'id')" in sql
+    # کوتیشن دوبرابر می‌شود ولی بک‌اسلش نه (وگرنه متن هنگام برگرداندن خراب می‌شود)
+    assert r"'O''Brien \ IT'" in sql
+    assert "'الف'" in sql
+    assert sql.endswith("COMMIT;\n")
     assert not any(f.endswith(".partial") for f in os.listdir(out))
 
 
@@ -46,10 +51,10 @@ def test_keeps_only_last_three_days(tmp_path):
     start = datetime(2026, 10, 4, 13)
     for i in range(5):
         _, _, removed = bk.backup_database(str(out), 3, url, start + timedelta(days=i))
-    names = sorted(f for f in os.listdir(out) if f.endswith(".sqlite"))
-    assert names == ["ITServiceLog_1405-07-14.sqlite", "ITServiceLog_1405-07-15.sqlite",
-                     "ITServiceLog_1405-07-16.sqlite"]
-    assert removed == ["ITServiceLog_1405-07-13.sqlite"]
+    names = sorted(f for f in os.listdir(out) if f.endswith(".sql"))
+    assert names == ["ITServiceLog_1405-07-14.sql", "ITServiceLog_1405-07-15.sql",
+                     "ITServiceLog_1405-07-16.sql"]
+    assert removed == ["ITServiceLog_1405-07-13.sql"]
     assert (out / "notes.txt").exists()
 
 

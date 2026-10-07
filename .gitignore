@@ -18,7 +18,6 @@ assets/seed.sqlite
 /deploy.json
 /config.json
 
-# Local dev environment / test + agent scratch
+# Local dev environment / test cache
 /.venv/
 .pytest_cache/
-/.superpowers/

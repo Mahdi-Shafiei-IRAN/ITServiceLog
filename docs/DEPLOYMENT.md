@@ -159,10 +159,11 @@ mssql+pyodbc://@SRV-DB\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Ser
 
 > برای بسته‌بندی پشتیبانی SQL Server در نسخه‌ی نصبی، پیش از `build.ps1` باید در محیط build دستور `pip install pyodbc` را هم زده باشید. (پشتیبانی PostgreSQL به‌صورت پیش‌فرض بسته‌بندی می‌شود.)
 
-## ۸) بکاپ روزانه‌ی خودکار (از نسخه‌ی 1.6.3)
+## ۸) بکاپ روزانه‌ی خودکار (از نسخه‌ی 1.6.4)
 
-برنامه‌ی نصب‌شده با پارامتر `--backup` بدون باز کردن پنجره، کل دیتابیس سرور را در یک فایل
-SQLite (مثلاً `ITServiceLog_1405-07-15.sqlite`) ذخیره می‌کند و فقط ۳ بکاپ آخر را نگه می‌دارد:
+برنامه‌ی نصب‌شده با پارامتر `--backup` بدون باز کردن پنجره، از دیتابیس PostgreSQL سرور یک
+فایل SQL (مثل خروجی متنی `pg_dump`) می‌سازد — مثلاً `ITServiceLog_1405-07-15.sql` — و فقط
+۳ بکاپ آخر را نگه می‌دارد. به نصب pg_dump روی سیستم نیازی نیست.
 
 ```
 "C:\Program Files\ITServiceLog\ITServiceLog.exe" --backup "D:\Backups\ITServiceLog" --keep 3
@@ -172,4 +173,19 @@ SQLite (مثلاً `ITServiceLog_1405-07-15.sqlite`) ذخیره می‌کند و
   `powershell -ExecutionPolicy Bypass -File scripts\setup_backup_task.ps1`
 - نتیجه‌ی هر اجرا در `backup.log` همان پوشه نوشته می‌شود.
 - بکاپ جدید اول کامل و بررسی می‌شود؛ تا موفق نشده، هیچ بکاپ قبلی پاک نمی‌شود.
-- برگرداندن روی سرور: `python scripts\migrate_to_postgres.py --source <فایل بکاپ> --force`
+- فایل بکاپ شامل ساخت جدول‌ها + همه‌ی داده‌ها + تنظیم sequence هاست، داخل یک تراکنش.
+
+**برگرداندن بکاپ** (همیشه روی یک دیتابیس **خالی**؛ دیتابیس فعلی دست نمی‌خورد):
+
+```sql
+CREATE DATABASE itservicelog_restore OWNER itapp;
+```
+
+```
+psql -h 10.0.13.12 -U itapp -d itservicelog_restore -f ITServiceLog_1405-07-15.sql
+```
+
+یا از سیستمی که psql ندارد:
+`python scripts\restore_backup.py <فایل بکاپ> --target "postgresql+psycopg2://itapp:PASSWORD@10.0.13.12:5432/itservicelog_restore"`
+
+بعد از بررسی، `db_url` را به دیتابیس جدید عوض کنید (یا نام دو دیتابیس را جابه‌جا کنید).
