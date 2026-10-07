@@ -9,10 +9,11 @@ from openpyxl.utils import get_column_letter
 
 from reports.excel_exporter import _new_sheet, _write_row
 from services import key_activity_service as svc
+from utils import jalali
 
 
 def _dt(d):
-    return d.strftime("%Y/%m/%d") if d else "-"
+    return jalali.fmt(d)
 
 
 def range_label(rng):
@@ -22,7 +23,7 @@ def range_label(rng):
 def default_filename(rng):
     if rng is None:
         return "Key_Activities_All.xlsx"
-    return f"Key_Activities_{rng[0]:%Y-%m-%d}_{rng[1]:%Y-%m-%d}.xlsx"
+    return f"Key_Activities_{jalali.fmt(rng[0], '-')}_{jalali.fmt(rng[1], '-')}.xlsx"
 
 
 def export_key_activities_to_excel(filepath, activities, rng, owner=None, show_owner=False):

@@ -61,4 +61,8 @@ def main():
             break
 
 if __name__ == "__main__":
+    # بکاپ زمان‌بندی‌شده (Task Scheduler): بدون باز کردن پنجره‌ی برنامه
+    if "--backup" in sys.argv:
+        from services.backup_service import run_cli
+        sys.exit(run_cli(sys.argv[1:]))
     main()

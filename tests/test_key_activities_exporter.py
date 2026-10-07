@@ -44,18 +44,18 @@ def test_three_sheets_for_a_period(tmp_path):
                                         "پیشرفت ٪", "شروع", "اتمام", "شرح", "نتیجه"]
     assert ws.max_row == 3
     assert [c.value for c in ws[2]] == [1, "راه‌اندازی سرور بکاپ", "سرور", KEY_PRIORITY_TOP,
-                                        KEY_STATUS_IN_PROGRESS, 60, "2026/08/20", "-",
+                                        KEY_STATUS_IN_PROGRESS, 60, "1405/05/29", "-",
                                         "بکاپ شبانه", "-"]
 
     ws2 = wb["گزارش پیشرفت"]
     assert [c.value for c in ws2[1]] == ["ردیف", "تاریخ", "عنوان کار", "متن به‌روزرسانی",
                                          "پیشرفت ٪", "وضعیت", "ثبت‌کننده"]
     assert ws2.max_row == 2   # فقط به‌روزرسانیِ داخل شهریور
-    assert [c.value for c in ws2[2]] == [1, "2026/09/10", "راه‌اندازی سرور بکاپ",
+    assert [c.value for c in ws2[2]] == [1, "1405/06/19", "راه‌اندازی سرور بکاپ",
                                          "نصب و پیکربندی", 60, KEY_STATUS_IN_PROGRESS, "مدیر IT"]
 
     summary = _summary(wb)
-    assert summary["بازه‌ی گزارش"] == "2026/09/01 تا 2026/09/30"
+    assert summary["بازه‌ی گزارش"] == "1405/06/10 تا 1405/07/08"
     assert summary["تعداد کارهای شاخص در بازه"] == 2
     assert summary["انجام‌شده در بازه"] == 1
     assert summary["شروع‌شده در بازه"] == 1
@@ -93,7 +93,7 @@ def test_empty_export_still_has_three_sheets(tmp_path):
 
 
 def test_default_filename_and_range_label():
-    assert default_filename(SEPT) == "Key_Activities_2026-09-01_2026-09-30.xlsx"
+    assert default_filename(SEPT) == "Key_Activities_1405-06-10_1405-07-08.xlsx"
     assert default_filename(None) == "Key_Activities_All.xlsx"
     assert range_label(None) == "همه‌ی زمان‌ها"
-    assert range_label(SEPT) == "2026/09/01 تا 2026/09/30"
+    assert range_label(SEPT) == "1405/06/10 تا 1405/07/08"

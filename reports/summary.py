@@ -1,5 +1,6 @@
 """توابع کمکی برای خلاصه‌سازی برگه‌های گزارش روزانه."""
 from database.models import DEPT_LABELS
+from utils import jalali
 
 
 def dept_label(record):
@@ -15,7 +16,7 @@ def record_date(record):
 
 def date_text(record):
     d = record_date(record)
-    return d.strftime("%Y/%m/%d") if d else "-"
+    return jalali.fmt(d)
 
 
 def counted_lines(record):

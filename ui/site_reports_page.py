@@ -10,9 +10,11 @@ from datetime import datetime, timedelta
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
-                               QComboBox, QDateEdit, QFileDialog, QMessageBox,
+                               QComboBox, QFileDialog, QMessageBox,
                                QAbstractItemView, QTabWidget, QCheckBox)
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import Session
 
 from database.models import (SiteDailyActivity, SiteNetworkStat, Technician,
@@ -84,11 +86,11 @@ class SiteReportsPage(QWidget):
         for label, key in _PERIODS:
             self.cmb_period.addItem(label, key)
         self.cmb_period.currentIndexChanged.connect(self._period_changed)
-        self.date_from = QDateEdit(); self.date_from.setCalendarPopup(True)
+        self.date_from = JalaliDateEdit(); self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy/MM/dd")
         self.date_from.setDate(QDate.currentDate().addDays(-30))
         self.date_from.dateChanged.connect(self.apply_filters); self.date_from.setEnabled(False)
-        self.date_to = QDateEdit(); self.date_to.setCalendarPopup(True)
+        self.date_to = JalaliDateEdit(); self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy/MM/dd")
         self.date_to.setDate(QDate.currentDate())
         self.date_to.dateChanged.connect(self.apply_filters); self.date_to.setEnabled(False)
@@ -216,11 +218,9 @@ class SiteReportsPage(QWidget):
             ws = _week_start(today) - timedelta(days=7)
             return ws, ws + timedelta(days=6)
         if key == "this_month":
-            return today.replace(day=1), today
+            return jalali.month_start(today), today
         if key == "last_month":
-            first_this = today.replace(day=1)
-            last_prev = first_this - timedelta(days=1)
-            return last_prev.replace(day=1), last_prev
+            return jalali.prev_month_range(today)
         if key == "custom":
             return self.date_from.date().toPython(), self.date_to.date().toPython()
         return None
@@ -241,7 +241,7 @@ class SiteReportsPage(QWidget):
     @staticmethod
     def _searchable(row):
         parts = [row.technician_name_snapshot or "", row.platform or "",
-                 (row.report_date.strftime("%Y/%m/%d") if row.report_date else ""),
+                 (jalali.fmt(row.report_date) if row.report_date else ""),
                  getattr(row, "activity_type", "") or "",
                  getattr(row, "description", "") or "",
                  getattr(row, "status", "") or "",
@@ -265,7 +265,7 @@ class SiteReportsPage(QWidget):
         self._fill_net()
 
     def _dt(self, d):
-        return d.strftime("%Y/%m/%d") if d else "-"
+        return jalali.fmt(d)
 
     def _checkbox_item(self):
         it = QTableWidgetItem()

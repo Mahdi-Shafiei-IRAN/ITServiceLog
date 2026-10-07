@@ -2,9 +2,10 @@
 from datetime import date, datetime
 
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit,
-                               QComboBox, QSpinBox, QDateEdit, QCheckBox, QPlainTextEdit,
+                               QComboBox, QSpinBox, QCheckBox, QPlainTextEdit,
                                QPushButton, QMessageBox)
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
 
 from database.models import (KeyActivity, KEY_STATUSES, KEY_STATUS_DONE,
                              KEY_STATUS_IN_PROGRESS, KEY_PRIORITIES, KEY_PRIORITY_NORMAL)
@@ -101,7 +102,7 @@ class KeyActivityDialog(QDialog):
         layout.addLayout(btns)
 
     def _date_edit(self):
-        w = QDateEdit()
+        w = JalaliDateEdit()
         w.setCalendarPopup(True)
         w.setDisplayFormat("yyyy/MM/dd")
         w.setDate(QDate.currentDate())

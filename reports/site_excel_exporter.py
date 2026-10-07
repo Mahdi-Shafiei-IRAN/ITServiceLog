@@ -8,10 +8,11 @@
 import openpyxl
 
 from reports.excel_exporter import _new_sheet, _write_row
+from utils import jalali
 
 
 def _dt(d):
-    return d.strftime("%Y/%m/%d") if d else "-"
+    return jalali.fmt(d)
 
 
 def _num(v):
@@ -76,7 +77,7 @@ def export_site_to_excel(filepath, daily_rows, network_rows,
     if technician:
         rows.append(("کارشناس", technician.full_name))
     if date_range:
-        rows.append(("بازه‌ی گزارش", f"{date_range[0]} تا {date_range[1]}"))
+        rows.append(("بازه‌ی گزارش", jalali.range_text(date_range)))
     rows.append(("تعداد ردیف‌های گزارش روزانه", len(daily_rows)))
     rows.append(("تعداد ردیف‌های پایش شبکه‌ها", len(network_rows)))
     # تفکیک گزارش روزانه بر اساس بستر

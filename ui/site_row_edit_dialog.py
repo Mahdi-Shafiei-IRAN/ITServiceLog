@@ -1,8 +1,9 @@
 """ویرایش یک ردیفِ واحد سایت (گزارش روزانه یا پایش شبکه‌ها)."""
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel,
-                               QLineEdit, QComboBox, QPushButton, QDateEdit, QMessageBox)
+                               QLineEdit, QComboBox, QPushButton, QMessageBox)
 from PySide6.QtGui import QIntValidator
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
 from sqlalchemy.orm import Session
 
 
@@ -26,7 +27,7 @@ class SiteRowEditDialog(QDialog):
         form = QFormLayout()
         form.setSpacing(10)
 
-        self.date_edit = QDateEdit()
+        self.date_edit = JalaliDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("yyyy/MM/dd")
         d = self.row.report_date

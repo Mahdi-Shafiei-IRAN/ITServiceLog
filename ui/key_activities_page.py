@@ -10,10 +10,12 @@ from html import escape
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
                                QLineEdit, QPushButton, QComboBox, QTableWidget,
                                QTableWidgetItem, QHeaderView, QAbstractItemView, QSplitter,
-                               QFrame, QSpinBox, QDateEdit, QMessageBox, QFileDialog,
+                               QFrame, QSpinBox, QMessageBox, QFileDialog,
                                QProgressBar, QStackedWidget, QScrollArea, QTextBrowser)
 from PySide6.QtGui import QColor
 from PySide6.QtCore import Qt, QDate, QItemSelection, QItemSelectionModel
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import selectinload
 
 from database.models import (KeyActivity, Technician, KEY_STATUSES, KEY_STATUS_DONE,
@@ -59,7 +61,7 @@ _EMPTY_FILTERED = ("در این بازه یا با این فیلترها کار�
 
 
 def _dt(d):
-    return d.strftime("%Y/%m/%d") if d else "-"
+    return jalali.fmt(d)
 
 
 def _transparent(widget):
@@ -368,7 +370,7 @@ class KeyActivitiesPage(QWidget):
             grid = QGridLayout()
             grid.setHorizontalSpacing(8)
             grid.setVerticalSpacing(6)
-            self.date_update = QDateEdit()
+            self.date_update = JalaliDateEdit()
             self.date_update.setCalendarPopup(True)
             self.date_update.setDisplayFormat("yyyy/MM/dd")
             self.date_update.setDate(QDate.currentDate())

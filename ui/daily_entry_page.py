@@ -11,10 +11,12 @@ from datetime import date
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                                QPushButton, QTreeWidget, QTreeWidgetItem,
-                               QTextEdit, QMessageBox, QGroupBox, QDateEdit, QTableWidget,
+                               QTextEdit, QMessageBox, QGroupBox, QTableWidget,
                                QTableWidgetItem, QComboBox, QHeaderView, QSplitter,
                                QAbstractItemView, QCompleter)
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import Session
 
 from database.models import (Task, ServiceRecord, ServiceRecordTask, Employee,
@@ -53,7 +55,7 @@ class DailyEntryPage(QWidget):
         top.addWidget(title)
         top.addStretch()
 
-        self.date_edit = QDateEdit()
+        self.date_edit = JalaliDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("yyyy/MM/dd")
         self.date_edit.setDate(QDate.currentDate())
@@ -504,7 +506,7 @@ class DailyEntryPage(QWidget):
         total = sum(counts.values()) + len(named)
         QMessageBox.information(
             self, "موفق",
-            f"گزارش {day.strftime('%Y/%m/%d')} ذخیره شد. مجموع خدمات ثبت‌شده: {total}")
+            f"گزارش {jalali.fmt(day)} ذخیره شد. مجموع خدمات ثبت‌شده: {total}")
         self.load_data()
 
     def _placeholder_employee_id(self):
@@ -534,7 +536,7 @@ class DailyEntryPage(QWidget):
             return
         confirm = QMessageBox.question(
             self, "تأیید حذف",
-            f"کل گزارش تاریخ {day.strftime('%Y/%m/%d')} حذف شود؟ این عملیات قابل بازگشت نیست.",
+            f"کل گزارش تاریخ {jalali.fmt(day)} حذف شود؟ این عملیات قابل بازگشت نیست.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if confirm != QMessageBox.Yes:
             return

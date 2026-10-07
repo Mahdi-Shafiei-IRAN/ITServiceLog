@@ -2,9 +2,11 @@ from datetime import datetime, timedelta, date
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QFrame, QSizePolicy, QComboBox, QDateEdit
+    QFrame, QSizePolicy, QComboBox
 )
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -75,11 +77,11 @@ class DashboardPage(QWidget):
             self.cmb_period.addItem(label, key)
         self.cmb_period.currentIndexChanged.connect(self._period_changed)
 
-        self.date_from = QDateEdit(); self.date_from.setCalendarPopup(True)
+        self.date_from = JalaliDateEdit(); self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy/MM/dd")
         self.date_from.setDate(QDate.currentDate().addDays(-29)); self.date_from.setEnabled(False)
         self.date_from.dateChanged.connect(self.refresh_dashboard)
-        self.date_to = QDateEdit(); self.date_to.setCalendarPopup(True)
+        self.date_to = JalaliDateEdit(); self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy/MM/dd")
         self.date_to.setDate(QDate.currentDate()); self.date_to.setEnabled(False)
         self.date_to.dateChanged.connect(self.refresh_dashboard)
@@ -151,11 +153,9 @@ class DashboardPage(QWidget):
         elif key == "this_week":
             start, end = week_start(today), today
         elif key == "this_month":
-            start, end = today.replace(day=1), today
+            start, end = jalali.month_start(today), today
         elif key == "last_month":
-            first_this = today.replace(day=1)
-            last_prev = first_this - timedelta(days=1)
-            start, end = last_prev.replace(day=1), last_prev
+            start, end = jalali.prev_month_range(today)
         elif key == "last90":
             start, end = today - timedelta(days=89), today
         elif key == "custom":
@@ -314,7 +314,7 @@ class DashboardPage(QWidget):
             step = max(1, len(days) // 8)
             idx = list(range(0, len(days), step))
             ax.set_xticks(idx)
-            ax.set_xticklabels([days[i].strftime("%m/%d") for i in idx],
+            ax.set_xticklabels([jalali.fmt_md(days[i]) for i in idx],
                                rotation=45, fontsize=8, ha="right")
             ax.legend(fontsize=8, facecolor=surface, edgecolor=p["border"], labelcolor=text_color)
         ax.spines[['top', 'right']].set_visible(False)

@@ -4,9 +4,11 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTableWidget, QTableWidgetItem, QHeaderView,
     QDialog, QTextEdit, QFrame, QAbstractItemView, QMessageBox, QFileDialog,
-    QComboBox, QDateEdit, QCheckBox
+    QComboBox, QCheckBox
 )
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import Session
 from database.models import ServiceRecord, DEPARTMENTS
 # export_records_to_excel به‌صورت تنبل داخل متد خروجی import می‌شود (سرعت استارتاپ)
@@ -143,14 +145,14 @@ class MyReportsPage(QWidget):
             self.cmb_dept.addItem(label, key)
         self.cmb_dept.currentIndexChanged.connect(self.filter_records)
 
-        self.date_from = QDateEdit()
+        self.date_from = JalaliDateEdit()
         self.date_from.setCalendarPopup(True)
         self.date_from.setDisplayFormat("yyyy/MM/dd")
         self.date_from.setDate(QDate.currentDate().addDays(-7))
         self.date_from.dateChanged.connect(self.filter_records)
         self.date_from.setEnabled(False)
 
-        self.date_to = QDateEdit()
+        self.date_to = JalaliDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDisplayFormat("yyyy/MM/dd")
         self.date_to.setDate(QDate.currentDate())
@@ -265,11 +267,9 @@ class MyReportsPage(QWidget):
             ws = week_start(today) - timedelta(days=7)
             start, end = ws, ws + timedelta(days=6)
         elif key == "this_month":
-            start, end = today.replace(day=1), today
+            start, end = jalali.month_start(today), today
         elif key == "last_month":
-            first_this = today.replace(day=1)
-            last_prev = first_this - timedelta(days=1)
-            start, end = last_prev.replace(day=1), last_prev
+            start, end = jalali.prev_month_range(today)
         elif key == "custom":
             start = self.date_from.date().toPython()
             end = self.date_to.date().toPython()

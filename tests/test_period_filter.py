@@ -19,8 +19,9 @@ def test_period_ranges():
     assert period_range("last30", TODAY) == (date(2026, 8, 28), TODAY)
     assert period_range("this_week", TODAY) == (date(2026, 9, 26), TODAY)
     assert period_range("last_week", TODAY) == (date(2026, 9, 19), date(2026, 9, 25))
-    assert period_range("this_month", TODAY) == (date(2026, 9, 1), TODAY)
-    assert period_range("last_month", TODAY) == (date(2026, 8, 1), date(2026, 8, 31))
+    # ماه‌ها شمسی‌اند: ۴ مهر ۱۴۰۵ → از ۱ مهر؛ ماه گذشته = کل شهریور
+    assert period_range("this_month", TODAY) == (date(2026, 9, 23), TODAY)
+    assert period_range("last_month", TODAY) == (date(2026, 8, 23), date(2026, 9, 22))
 
 
 def test_custom_range_is_ordered():

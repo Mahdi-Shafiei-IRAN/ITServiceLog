@@ -9,10 +9,12 @@
 ساخته نمی‌شود). فیلدهای کشویی با مقادیرِ ثابتِ تعریف‌شده در مدل پر می‌شوند.
 """
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QMessageBox, QDateEdit, QTableWidget,
+                               QPushButton, QMessageBox, QTableWidget,
                                QComboBox, QHeaderView, QAbstractItemView, QTabWidget)
 from PySide6.QtGui import QIntValidator
 from PySide6.QtCore import Qt, QDate
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 from sqlalchemy.orm import Session
 
 from database.models import (SiteDailyActivity, SiteNetworkStat,
@@ -79,7 +81,7 @@ class SheetEditor(QWidget):
         lbl.setWordWrap(True)
         top.addWidget(lbl, 1)
 
-        self.date_edit = QDateEdit()
+        self.date_edit = JalaliDateEdit()
         self.date_edit.setCalendarPopup(True)
         self.date_edit.setDisplayFormat("yyyy/MM/dd")
         self.date_edit.setDate(QDate.currentDate())
@@ -283,7 +285,7 @@ class SheetEditor(QWidget):
         self.db.commit()
         QMessageBox.information(
             self, "موفق",
-            f"گزارش {day.strftime('%Y/%m/%d')} ذخیره شد. تعداد ردیف‌ها: {len(collected)}")
+            f"گزارش {jalali.fmt(day)} ذخیره شد. تعداد ردیف‌ها: {len(collected)}")
         self.load_data()
 
     def delete_day(self):
@@ -294,7 +296,7 @@ class SheetEditor(QWidget):
             return
         confirm = QMessageBox.question(
             self, "تأیید حذف",
-            f"کل گزارشِ تاریخ {day.strftime('%Y/%m/%d')} حذف شود؟ این عملیات قابل بازگشت نیست.",
+            f"کل گزارشِ تاریخ {jalali.fmt(day)} حذف شود؟ این عملیات قابل بازگشت نیست.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if confirm != QMessageBox.Yes:
             return

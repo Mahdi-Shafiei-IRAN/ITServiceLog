@@ -158,3 +158,18 @@ mssql+pyodbc://@SRV-DB\SQLEXPRESS/ITServiceLog?driver=ODBC+Driver+17+for+SQL+Ser
 ```
 
 > برای بسته‌بندی پشتیبانی SQL Server در نسخه‌ی نصبی، پیش از `build.ps1` باید در محیط build دستور `pip install pyodbc` را هم زده باشید. (پشتیبانی PostgreSQL به‌صورت پیش‌فرض بسته‌بندی می‌شود.)
+
+## ۸) بکاپ روزانه‌ی خودکار (از نسخه‌ی 1.6.3)
+
+برنامه‌ی نصب‌شده با پارامتر `--backup` بدون باز کردن پنجره، کل دیتابیس سرور را در یک فایل
+SQLite (مثلاً `ITServiceLog_1405-07-15.sqlite`) ذخیره می‌کند و فقط ۳ بکاپ آخر را نگه می‌دارد:
+
+```
+"C:\Program Files\ITServiceLog\ITServiceLog.exe" --backup "D:\Backups\ITServiceLog" --keep 3
+```
+
+- ثبت در Task Scheduler (هر روز ساعت ۱۳، و اگر سیستم خاموش بود به‌محض روشن شدن):
+  `powershell -ExecutionPolicy Bypass -File scripts\setup_backup_task.ps1`
+- نتیجه‌ی هر اجرا در `backup.log` همان پوشه نوشته می‌شود.
+- بکاپ جدید اول کامل و بررسی می‌شود؛ تا موفق نشده، هیچ بکاپ قبلی پاک نمی‌شود.
+- برگرداندن روی سرور: `python scripts\migrate_to_postgres.py --source <فایل بکاپ> --force`

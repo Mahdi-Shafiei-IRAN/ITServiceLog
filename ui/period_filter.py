@@ -5,8 +5,10 @@
 """
 from datetime import date, timedelta
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox, QDateEdit
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QComboBox
 from PySide6.QtCore import QDate, Signal
+from ui.date_edit import JalaliDateEdit
+from utils import jalali
 
 PERIODS = [
     ("همه‌ی زمان‌ها", "all"), ("امروز", "today"), ("دیروز", "yesterday"),
@@ -38,10 +40,9 @@ def period_range(key, today, date_from=None, date_to=None):
         ws = week_start(today) - timedelta(days=7)
         return ws, ws + timedelta(days=6)
     if key == "this_month":
-        return today.replace(day=1), today
+        return jalali.month_start(today), today
     if key == "last_month":
-        last_prev = today.replace(day=1) - timedelta(days=1)
-        return last_prev.replace(day=1), last_prev
+        return jalali.prev_month_range(today)
     if key == "custom" and date_from and date_to:
         return (date_from, date_to) if date_from <= date_to else (date_to, date_from)
     return None
@@ -77,7 +78,7 @@ class PeriodFilter(QWidget):
         self.combo.currentIndexChanged.connect(self._on_key_changed)
 
     def _date_edit(self, qdate):
-        w = QDateEdit()
+        w = JalaliDateEdit()
         w.setCalendarPopup(True)
         w.setDisplayFormat("yyyy/MM/dd")
         w.setDate(qdate)

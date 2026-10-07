@@ -9,6 +9,7 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 from reports import summary
+from utils import jalali
 
 
 def export_named_services_to_excel(filepath, lines, technician=None, date_range=None):
@@ -47,7 +48,7 @@ def export_named_services_to_excel(filepath, lines, technician=None, date_range=
     if technician:
         rows.append(("کارشناس", technician.full_name))
     if date_range:
-        rows.append(("بازه‌ی گزارش", f"{date_range[0]} تا {date_range[1]}"))
+        rows.append(("بازه‌ی گزارش", jalali.range_text(date_range)))
     rows.append(("مجموع خدمات نام‌دار", len(lines)))
     rows.append(("", ""))
     rows.extend(sorted(totals.items(), key=lambda kv: kv[1], reverse=True))
@@ -170,7 +171,7 @@ def export_records_to_excel(filepath, records, technician=None, date_range=None)
     if technician:
         rows.insert(0, ("کارشناس", technician.full_name))
     if date_range:
-        rows.append(("بازه‌ی گزارش", f"{date_range[0]} تا {date_range[1]}"))
+        rows.append(("بازه‌ی گزارش", jalali.range_text(date_range)))
     rows.append(("", ""))
     rows.append(("تفکیک بر اساس نوع خدمت", ""))
     rows.extend(sorted(totals.items(), key=lambda kv: kv[1], reverse=True))
