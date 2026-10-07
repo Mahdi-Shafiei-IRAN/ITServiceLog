@@ -14,6 +14,11 @@ class JalaliDateEdit(QDateEdit):
         super().__init__(parent)
         self.setCalendar(jalali.calendar())
         self.setDisplayFormat("yyyy/MM/dd")
+        # چرخ ماوس فوکوس نمی‌گیرد و تاریخ را عوض نمی‌کند (با یک اسکرول اشتباه سال‌ها جابه‌جا می‌شد)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):
+        event.ignore()  # به اسکرول صفحه منتقل می‌شود
 
     def setCalendarPopup(self, enable):
         super().setCalendarPopup(enable)
