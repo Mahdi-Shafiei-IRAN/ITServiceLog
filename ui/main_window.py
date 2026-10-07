@@ -15,6 +15,7 @@ from ui.technicians_page import TechniciansPage
 from ui.admin_reports_page import AdminReportsPage
 from ui.key_activities_page import KeyActivitiesPage
 from ui.theme import set_variant, make_theme_toggle
+from ui.updater import UpdateChecker
 from database.models import DEPT_LABELS, DEPT_SITE, DEPT_IT
 
 class MainWindow(QMainWindow):
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"IT Service Log - کاربر: {self.technician.full_name} ({self.technician.role})")
         self.setMinimumSize(1100, 768)
         self.setup_ui()
+        self.updater = UpdateChecker(self)  # اعلان نسخه‌ی جدید (فقط نسخه‌ی نصب‌شده)
 
     def setup_ui(self):
         central_widget = QWidget()

@@ -109,6 +109,8 @@ $piArgs = @(
     "--name", "ITServiceLog", "--windowed",
     "--icon", "assets\app.ico",
     "--add-data", "assets\app.ico;assets",
+    # نسخه‌ی برنامه برای اعلان به‌روزرسانی (services/update_service.current_version)
+    "--add-data", "version.txt;.",
     "--collect-submodules", "sqlalchemy"
 )
 if ($addSeed) { $piArgs += @("--add-data", "assets\seed.sqlite;assets") }

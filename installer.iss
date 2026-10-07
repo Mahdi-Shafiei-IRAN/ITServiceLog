@@ -58,3 +58,11 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilen
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "اجرای {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; به‌روزرسانی از داخل برنامه (/autoupdate=1): بعد از نصبِ بی‌صدا، برنامه دوباره باز شود
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait runasoriginaluser; Check: IsAutoUpdate
+
+[Code]
+function IsAutoUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:autoupdate|0}') = '1';
+end;
