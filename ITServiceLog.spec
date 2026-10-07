@@ -9,7 +9,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('assets/app.ico', 'assets'), ('assets/seed.sqlite', 'assets'), ('config.example.json', '.')],
+    datas=[('assets/app.ico', 'assets'), ('version.txt', '.'), ('assets/seed.sqlite', 'assets'), ('config.example.json', '.')],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
